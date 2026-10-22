@@ -1,0 +1,9 @@
+# Развёртывание на Render: New → Blueprint → этот репозиторий.
+# Образ собирается по Dockerfile, диск бесплатного тарифа эфемерный —
+# при первом старте (и после каждого деплоя) снапшот собирается сам.
+services:
+  - type: web
+    name: bond-screener
+    runtime: docker
+    plan: free
+    healthCheckPath: /
