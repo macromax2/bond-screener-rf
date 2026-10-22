@@ -39,7 +39,7 @@
     /* nowrap: иначе длинная строка «данные за …» выталкивает кнопки на вторую
        строку. Мета сжимается через min-width:0 + ellipsis, поэтому помещается. */
     display: flex; align-items: center; gap: 16px; flex-wrap: nowrap;
-    padding: 10px 18px;
+    padding: 5px 14px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
     flex: 0 0 auto;
@@ -70,7 +70,7 @@
   /* overflow-y:auto обязателен: под таблицей теперь живут панели (портфель,
      календарь), и без него main переполняется, а прокрутить его нельзя —
      body overflow:hidden. Пока таблица одна, прокрутка не появляется. */
-  main { flex: 1 1 auto; padding: 14px 18px; min-width: 0; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+  main { flex: 1 1 auto; padding: 8px 14px; min-width: 0; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 
   /* три экрана — «Таблица», «Календарь», «Портфель»: вкладки в шапке,
      на телефоне/планшете (≤900px) — закреплённая нижняя панель */
@@ -125,18 +125,19 @@
   .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
 
   .toolbar {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 10px; margin-bottom: 12px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 4px; flex: 0 0 auto;
   }
   .stats {
-    display: flex; flex-wrap: wrap; gap: 10px; flex: 1 1 auto;
+    display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 auto;
   }
   .stat {
     background: var(--panel); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 8px 14px; min-width: 110px;
+    border-radius: var(--radius); padding: 3px 10px; min-width: 96px;
+    display: flex; align-items: baseline; gap: 6px;
   }
-  .stat .v { font-size: 17px; font-weight: 600; }
-  .stat .l { font-size: 11px; color: var(--muted); }
+  .stat .v { font-size: 14px; font-weight: 600; }
+  .stat .l { font-size: 10px; color: var(--muted); }
 
   /* Выбор колонок */
   .colpick { position: relative; flex: 0 0 auto; }
@@ -172,7 +173,7 @@
   thead th {
     position: sticky; top: 0; z-index: 10;
     background: var(--panel2);
-    text-align: right; padding: 8px 10px;
+    text-align: right; padding: 4px 8px;
     font-weight: 600; font-size: 12px; color: var(--muted);
     border-bottom: 1px solid var(--border);
     cursor: pointer; white-space: nowrap; user-select: none;
@@ -180,10 +181,12 @@
   thead th:hover { color: var(--text); }
   thead th.sorted { color: var(--accent); }
   thead th.l, tbody td.l { text-align: left; }
-  tbody td { padding: 7px 10px; text-align: right; border-bottom: 1px solid #1c2231; white-space: nowrap; }
+  /* однострочные строки: всё в одну линию, длинное — многоточие.
+     Так в экран помещается ~30 строк вместо пяти. */
+  tbody td { padding: 2px 8px; text-align: right; border-bottom: 1px solid #1c2231; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: #1d2432; }
-  td.limited { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  td.limited { max-width: 200px; }
   .pos { color: var(--green); }
   .neg { color: var(--red); }
   .muted { color: var(--muted); }
@@ -192,7 +195,8 @@
     font-size: 11px; background: var(--panel2); border: 1px solid var(--border);
   }
   .liq-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); vertical-align: middle; }
-  .pager { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 12px; color: var(--muted); flex: 0 0 auto; flex-wrap: wrap; }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 2px; color: var(--muted); font-size: 12px; flex: 0 0 auto; flex-wrap: wrap; }
+  .pager button { padding: 1px 9px; font-size: 12px; }
   .empty { padding: 40px; text-align: center; color: var(--muted); }
 
   .drawer-mask {
@@ -221,10 +225,18 @@
     flex: 0 0 auto;
     background: var(--panel); border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 12px 14px; margin-bottom: 12px;
-    display: flex; flex-direction: column; gap: 11px;
+    padding: 6px 10px; margin-bottom: 4px;
+    display: flex; flex-direction: column; gap: 9px;
   }
+  /* верхняя строка (поиск + кнопка сворачивания) видна всегда;
+     остальные фильтры скрыты по умолчанию — таблица занимает экран */
   .fb-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .filterbar:not(.open) .fb-row:not(.fb-head) { display: none; }
+  .fb-head { gap: 8px; }
+  #btn-fb .cnt {
+    background: var(--accent); color: #fff; border-radius: 999px;
+    font-size: 11px; font-weight: 700; padding: 0 6px; margin-left: 4px;
+  }
   .fb-lab {
     font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
     color: var(--muted); flex: 0 0 auto; min-width: 84px;
@@ -284,9 +296,9 @@
   tbody tr.row-corp:hover { background: rgba(38,166,154,.06); }
 
   .bdg {
-    display: inline-block; padding: 1px 7px; border-radius: 5px;
+    display: inline-block; padding: 0 5px; border-radius: 5px;
     font-size: 10px; font-weight: 700; letter-spacing: .3px;
-    line-height: 1.5; vertical-align: middle;
+    line-height: 1.4; vertical-align: middle;
   }
   .bdg-ofz, .bdg-subfed, .bdg-muni { color: #fff; }
   .bdg-corp, .bdg-exch { color: #fff; }
@@ -300,19 +312,21 @@
   .offer-warn { color: var(--amber) !important; font-weight: 600; margin-left: 6px; }
   .bdg-none  { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
 
-  .cell-name { display: flex; flex-direction: column; gap: 3px; }
-  .cell-name .nm { font-weight: 600; color: var(--text); }
-  .cell-name .badges { display: flex; gap: 5px; flex-wrap: wrap; }
-  .cell-comb { display: flex; flex-direction: column; line-height: 1.3; }
+  /* ячейки в одну строку: имя+бейджи слева направо, значение+подпись тоже */
+  .cell-name { display: flex; flex-direction: row; align-items: center; gap: 6px; min-width: 0; }
+  .nm-row { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1 1 auto; }
+  .cell-name .nm { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .cell-name .badges { display: flex; gap: 4px; flex-wrap: nowrap; flex: 0 0 auto; }
+  .cell-comb { display: flex; flex-direction: row; align-items: baseline; gap: 6px; justify-content: flex-end; }
   .cell-comb .sub { font-size: 11px; color: var(--muted); }
-  td.why { white-space: normal; min-width: 250px; max-width: 340px; text-align: left; color: #aab6c9; font-size: 12px; line-height: 1.4; }
+  td.why { min-width: 200px; max-width: 340px; text-align: left; color: #aab6c9; font-size: 12px; }
   td.why .why-hi { color: var(--green); font-weight: 600; }
 
   /* кнопка «в портфель» в строке */
   .pf-add {
-    width: 26px; height: 26px; border-radius: 7px; padding: 0;
+    width: 15px; height: 15px; box-sizing: border-box; border-radius: 5px; padding: 0; flex: 0 0 15px;
     display: inline-flex; align-items: center; justify-content: center;
-    font-size: 16px; line-height: 1; border: 1px solid var(--border);
+    font-size: 11px; line-height: 1; border: 1px solid var(--border);
     background: var(--panel2); color: var(--muted);
   }
   .pf-add:hover { border-color: var(--green); color: var(--green); }
@@ -551,8 +565,10 @@
     <div class="view" id="view-table">
     <!-- БЛОК 1 — «Что ищем»: крупные переключатели -->
     <div class="filterbar">
-      <div class="fb-row">
+      <div class="fb-row fb-head">
         <input type="text" id="f-search" class="fb-search" placeholder="Поиск: тикер, ISIN, название, эмитент…">
+        <button id="btn-fb" class="ghost" title="Показать или скрыть остальные фильтры">⚙ Фильтры<span class="cnt" id="fb-cnt" hidden></span></button>
+        <button id="btn-reset" class="ghost" title="Вернуть все фильтры по умолчанию">↺ Сбросить</button>
       </div>
 
       <div class="fb-row">
@@ -616,7 +632,6 @@
           <span class="slider-val" id="f-term-val">10+ лет</span>
         </div>
         <div class="fb-grow"></div>
-        <button id="btn-reset" class="ghost" title="Вернуть все фильтры по умолчанию">↺ Сбросить</button>
       </div>
     </div>
 
@@ -1024,6 +1039,16 @@ function bindAll() {
     syncInputs();
     clearPreset();
     apply();
+  });
+
+  // Сворачивание фильтров: таблица занимает весь экран, раскрытый
+  // вид запоминается в localStorage. Счётчик — число нестандартных фильтров.
+  const FB_KEY = "bs.fbopen";
+  const fbEl = document.querySelector(".filterbar");
+  try { if (localStorage.getItem(FB_KEY) === "1") fbEl.classList.add("open"); } catch (e) {}
+  $("btn-fb").addEventListener("click", () => {
+    fbEl.classList.toggle("open");
+    try { localStorage.setItem(FB_KEY, fbEl.classList.contains("open") ? "1" : ""); } catch (e) {}
   });
 
   // мобильная панель фильтров (кнопка «☰ Фильтры» + маска)
@@ -1592,8 +1617,30 @@ function sortValue(b, col) {
   return b[col.key];
 }
 
+/* Сколько фильтров отличается от стандартных — показываем в кнопке
+   «⚙ Фильтры», чтобы свёрнутая панель не скрывала активные уточнения. */
+function updateFbCount() {
+  const el = $("fb-cnt"); if (!el) return;
+  const d = defaultFilters(), f = state.f;
+  let n = 0;
+  if (f.search) n++;
+  const setDiff = (a, b) => a.size !== b.size || [...a].some((v) => !b.has(v));
+  if (setDiff(f.issuer, d.issuer)) n++;
+  if (setDiff(f.coupon, d.coupon)) n++;
+  if (setDiff(f.currencies, d.currencies)) n++;
+  for (const k of ["noamort", "highRating", "showQualified", "traded",
+                   "anomalies", "netTax", "taxfree"]) if (f[k] !== d[k]) n++;
+  for (const k of ["yearsMin", "yearsMax", "ytmMin", "ytmMax", "priceMin",
+                   "priceMax", "durMin", "durMax", "spreadMin", "spreadMax",
+                   "liqMin", "turnoverMin", "complexityMax"])
+    if (f[k] !== d[k]) n++;
+  el.hidden = n === 0;
+  el.textContent = n;
+}
+
 function apply() {
   state.filtered = state.bonds.filter(matches);
+  updateFbCount();
   const { key, dir } = state.sort;
   const col = COLUMNS.find((c) => c.key === key);
   if (col) {
