@@ -21,6 +21,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# сначала подтягиваем самую свежую gh-pages с origin: иначе push упирается
+# в гонку с облачной сборкой (Actions публикует так же)
+git worktree prune
+git fetch -f origin gh-pages:gh-pages --quiet 2>/dev/null || true
+
 if git show-ref --verify --quiet refs/heads/gh-pages; then
   git worktree add -f "$WORK" gh-pages >/dev/null
 elif git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
@@ -34,26 +39,40 @@ else
 fi
 
 # актуальный сайт: только index.html + data.json
-find "$WORK" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-cp -R static/. "$WORK"/
+sync_site() {
+  find "$WORK" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+  cp -R static/. "$WORK"/
+  git -C "$WORK" add -A
+}
 
-if git -C "$WORK" diff --cached --quiet && \
-   [ -z "$(git -C "$WORK" status --porcelain)" ]; then
+commit_site() {
+  git -C "$WORK" -c user.name="macromax2" \
+                  -c user.email="macromax2@users.noreply.github.com" \
+                  commit -q -m "публикация $(TZ=Europe/Moscow date '+%Y-%m-%d %H:%M') МСК"
+}
+
+sync_site
+
+if [ -z "$(git -C "$WORK" status --porcelain)" ]; then
   echo "publish: изменений нет"
   exit 0
 fi
-git -C "$WORK" add -A
-git -C "$WORK" -c user.name="macromax2" \
-                -c user.email="macromax2@users.noreply.github.com" \
-                commit -q -m "публикация $(TZ=Europe/Moscow date '+%Y-%m-%d %H:%M') МСК"
+commit_site
+
 # push с повтором: если ветку успел обновить другой публикатор
-# (облачная сборка или локальный сервер) -- подтягиваем и повторяем
+# (облачная сборка или локальный сервер) -- берём свежую точку origin
+# и наслаиваем свой коммит заново (merge/rebase не нужен: gh-pages --
+# полностью генерируемая ветка, конфликты data.json только мешают)
 for i in 1 2 3; do
   if git -C "$WORK" push -q origin gh-pages 2>/dev/null; then
     echo "publish: готово -> https://macromax2.github.io/bond-screener-rf/"
     exit 0
   fi
-  git -C "$WORK" pull --rebase -q origin gh-pages 2>/dev/null || true
+  git -C "$WORK" fetch -q origin gh-pages 2>/dev/null || { sleep 3; continue; }
+  git -C "$WORK" reset -q --hard origin/gh-pages 2>/dev/null || { sleep 3; continue; }
+  sync_site
+  [ -z "$(git -C "$WORK" status --porcelain)" ] && { echo "publish: изменений нет"; exit 0; }
+  commit_site
   sleep 3
 done
 echo "publish: push не удался (попробуйте позже)" >&2
