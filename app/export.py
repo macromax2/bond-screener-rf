@@ -22,29 +22,37 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from . import analytics, daily, store
 from .main import _facets, _human_date, _stats
 
-MSK = ZoneInfo("Europe/Moscow")
 OUT = Path(__file__).resolve().parent.parent / "static" / "data.json"
 
 
-def _snapshot_is_today() -> bool:
-    """Собирался ли снапшот сегодня (по метке планировщика сервера)."""
-    today = datetime.now(MSK).date().isoformat()
-    return store.get_kv("last_build_date") == today
+def _snapshot_is_stale() -> bool:
+    """Устарел ли снапшот относительно ближайшего закрытого торгового дня.
+
+    Не по календарной дате, а по торговому дню: днём (до 19:05) ближайший
+    закрытый день -- вчерашний, и снапшот за него считается свежим.
+    """
+    snap = store.latest_snapshot()
+    if not snap or not snap.get("bonds"):
+        return True
+    try:
+        want = daily.resolve_trade_date()
+    except Exception:  # noqa: BLE001 -- сеть недоступна: не мешаем публикации
+        return False
+    return snap.get("trade_date") != want
 
 
 def export(no_build: bool = False, if_stale: bool = False) -> Path:
     """Записать data.json. Возвращает путь к файлу."""
     if no_build:
         pass
-    elif if_stale and _snapshot_is_today():
-        print("снапшот уже за сегодня -- пересборка не нужна", flush=True)
+    elif if_stale and not _snapshot_is_stale():
+        print("снапшот уже за ближайший закрытый день -- без пересборки",
+              flush=True)
     else:
         daily.build_snapshot()
 
@@ -63,7 +71,7 @@ def export(no_build: bool = False, if_stale: bool = False) -> Path:
         "total_bonds": meta_src.get("total_bonds"),
         "from_history": meta_src.get("from_history"),
         "update_at": "19:05",  # время плановой публикации, МСК
-        "loaded_iso": datetime.now(MSK).isoformat(timespec="seconds"),
+        "loaded_iso": meta_src.get("built_iso"),  # стабильно: без «шума»
         "refreshing": False,
         "dates": store.list_dates()[:10],
         "static": True,  # фронтенд включает статичный режим по этому флагу

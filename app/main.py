@@ -22,9 +22,11 @@ from __future__ import annotations
 import csv
 import io
 import json
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, time as dtime
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
@@ -37,6 +39,10 @@ app = FastAPI(title="Скринер облигаций РФ", version="2.0")
 
 MSK = ZoneInfo("Europe/Moscow")
 UPDATE_AT = dtime(19, 5)  # время пересборки снапшота, МСК (после закрытия)
+
+ROOT = Path(__file__).resolve().parent.parent  # корень репозитория (screener/)
+PUBLISH_SCRIPT = ROOT / "publish.sh"
+PUBLISH_LOG = ROOT / "data" / "publish.log"
 
 # --------------------------------------------------------------------------
 # Состояние в памяти: последний дневной снапшот из базы
@@ -76,8 +82,41 @@ def _rebuild(force: bool = False) -> None:
     try:
         snap = daily.build_snapshot(force=force)
         _apply_snapshot(snap)
+        _publish_site()  # свежий снапшот сразу уходит на GitHub Pages
     finally:
         _refreshing = False
+
+
+_publish_lock = threading.Lock()
+
+
+def _publish_site() -> None:
+    """Опубликовать снапшот на GitHub Pages (ветка gh-pages).
+
+    publish.sh сам решает, нужна ли пересборка (--if-stale: если сервер
+    уже собрал сегодня -- просто выгружает готовое), пишет static/data.json
+    и пушит ветку gh-pages; GitHub Pages пересобирает сайт за ~1 мин.
+    Если содержимое не изменилось -- пуш не выполняется.
+    Ошибки публикации не критичны: сайт продолжает отдавать прошлые данные.
+    """
+    if not PUBLISH_SCRIPT.exists():
+        return
+    if not _publish_lock.acquire(blocking=False):
+        return  # публикация уже идёт
+    try:
+        PUBLISH_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(PUBLISH_LOG, "ab") as log:
+            log.write(f"\n=== публикация {datetime.now(MSK).isoformat(timespec='seconds')} ===\n".encode())
+            log.flush()
+            subprocess.run(
+                ["/bin/bash", str(PUBLISH_SCRIPT)],
+                cwd=str(ROOT), timeout=1800,
+                stdout=log, stderr=log,
+            )
+    except Exception:  # noqa: BLE001 -- публикация не должна ронять сервер
+        pass
+    finally:
+        _publish_lock.release()
 
 
 def _ensure_loaded() -> bool:
@@ -215,9 +254,14 @@ def _startup() -> None:
         # собираем в фоне, посетители получают дружелюбный503 до готовности
         threading.Thread(target=_rebuild, daemon=True).start()
     else:
-        # сервер мог проспать 19:05 (хостинг засыпает при простое) --
-        # догоняющая пересборка, если дата снапшота устарела
-        threading.Thread(target=_catch_up_if_missed, daemon=True).start()
+        # сервер мог проспать 19:05 (ноутбук спал) -- догоняющая пересборка,
+        # затем сверяем сайт с базой (публикация дешёвая: без изменений --
+        # без пуша). _rebuild внутри уже публикует, второй вызов --
+        # no-op.
+        def _catch_up_and_publish() -> None:
+            _catch_up_if_missed()
+            _publish_site()
+        threading.Thread(target=_catch_up_and_publish, daemon=True).start()
     # 2) запускаем ежедневный планировщик (19:05 МСК)
     threading.Thread(target=_scheduler, daemon=True).start()
 
