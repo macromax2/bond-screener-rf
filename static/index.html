@@ -896,17 +896,26 @@ function medianOf(arr) {
 /* Загрузка данных                                                     */
 /* ------------------------------------------------------------------ */
 
+let STATIC_MODE = false; // GitHub Pages: API нет, данные лежат рядом (data.json)
+
 async function loadData() {
   $("meta").textContent = "загрузка данных…";
   $("btn-refresh").disabled = true;
   try {
-    const r = await fetch("/api/screener");
+    let r = await fetch("/api/screener");
+    if (r.status === 404) {
+      // статичный хостинг (GitHub Pages): берём data.json рядом со страницей
+      STATIC_MODE = true;
+      $("btn-refresh").style.display = "none"; // ручная пересборка недоступна
+      r = await fetch("./data.json");
+    }
     if (r.status === 503) {
       // холодный старт сервера: снапшот собирается с нуля (~2–4 мин)
       $("meta").innerHTML = '<span class="warn">первичная сборка снапшота (~2–4 мин)… страница обновится сама</span>';
       pollUntilReady(120);
       return; // finally разблокирует кнопку
     }
+    if (!r.ok) throw new Error("HTTP " + r.status);
     const data = await r.json();
     state.bonds = data.bonds || [];
     state.facets = data.facets || {};
@@ -924,10 +933,17 @@ async function loadData() {
 
 async function loadPresets() {
   try {
+    let src;
     const r = await fetch("/api/presets");
-    state.presets = (await r.json()).presets || [];
+    if (r.ok) {
+      src = await r.json();
+    } else {
+      // статичный режим: пресеты лежат внутри data.json
+      src = await (await fetch("./data.json")).json();
+    }
+    state.presets = src.presets || [];
     renderPresets();
-  } catch (e) { /* сервер жив, просто без пресетов */ }
+  } catch (e) { /* нет пресетов -- не критично */ }
 }
 
 function renderMeta() {
@@ -1035,6 +1051,7 @@ function bindAll() {
     }
   });
   $("btn-refresh").addEventListener("click", async () => {
+    if (STATIC_MODE) { location.reload(); return; } // статичный режим
     const btn = $("btn-refresh");
     btn.disabled = true;
     const old = btn.textContent;
