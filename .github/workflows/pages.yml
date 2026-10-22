@@ -1,0 +1,46 @@
+name: Сборка снапшота и публикация
+
+# Облачное расписание: скринер собирает MOEX-снапшот на серверах GitHub и
+# публикует сайт в ветку gh-pages. Локальный Мак для обновлений не нужен.
+# Пропущенных срабатываний не бывает: следующий запуск всегда строит снапшот
+# за ближайший закрытый торговый день (holiday-догон внутри daily.py).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '5 16 * * 1-5'   # 16:05 UTC = 19:05 МСК, пн-пт (после закрытия 18:40)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push в ветку gh-pages
+
+concurrency:
+  group: pages-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # publish.sh работает с веткой gh-pages через worktree
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Кэш данных (база снапшотов, каталог, квал-статус)
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: screener-data-${{ github.run_id }}
+          restore-keys: |
+            screener-data-
+
+      - name: Зависимости
+        run: pip install -r requirements.txt
+
+      - name: Сборка снапшота и публикация
+        run: ./publish.sh

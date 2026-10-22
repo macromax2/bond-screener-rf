@@ -46,5 +46,15 @@ git -C "$WORK" add -A
 git -C "$WORK" -c user.name="macromax2" \
                 -c user.email="macromax2@users.noreply.github.com" \
                 commit -q -m "публикация $(date '+%Y-%m-%d %H:%M') МСК"
-git -C "$WORK" push -q origin gh-pages
-echo "publish: готово -> https://macromax2.github.io/bond-screener-rf/"
+# push с повтором: если ветку успел обновить другой публикатор
+# (облачная сборка или локальный сервер) -- подтягиваем и повторяем
+for i in 1 2 3; do
+  if git -C "$WORK" push -q origin gh-pages 2>/dev/null; then
+    echo "publish: готово -> https://macromax2.github.io/bond-screener-rf/"
+    exit 0
+  fi
+  git -C "$WORK" pull --rebase -q origin gh-pages 2>/dev/null || true
+  sleep 3
+done
+echo "publish: push не удался (попробуйте позже)" >&2
+exit 1
