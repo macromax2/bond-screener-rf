@@ -45,7 +45,7 @@ fi
 git -C "$WORK" add -A
 git -C "$WORK" -c user.name="macromax2" \
                 -c user.email="macromax2@users.noreply.github.com" \
-                commit -q -m "публикация $(date '+%Y-%m-%d %H:%M') МСК"
+                commit -q -m "публикация $(TZ=Europe/Moscow date '+%Y-%m-%d %H:%M') МСК"
 # push с повтором: если ветку успел обновить другой публикатор
 # (облачная сборка или локальный сервер) -- подтягиваем и повторяем
 for i in 1 2 3; do
