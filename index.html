@@ -1,0 +1,2721 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Скринер облигаций РФ — MOEX</title>
+<style>
+  :root {
+    --bg: #0d1017;
+    --panel: #151a23;
+    --panel2: #1b2130;
+    --border: #262e3f;
+    --text: #dce3ee;
+    --muted: #8792a6;
+    --accent: #4f8cff;
+    --green: #26a69a;
+    --red: #ef5350;
+    --amber: #f0a35e;
+    --ofz: #4f8cff;
+    --subfed: #ab7df8;
+    --muni: #f0a35e;
+    --corp: #26a69a;
+    --exch: #7d93ad;
+    --other: #5b6472;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    /* каркас приложения: страница не скроллится, скроллятся внутренние блоки */
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    /* nowrap: иначе длинная строка «данные за …» выталкивает кнопки на вторую
+       строку. Мета сжимается через min-width:0 + ellipsis, поэтому помещается. */
+    display: flex; align-items: center; gap: 16px; flex-wrap: nowrap;
+    padding: 10px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; white-space: nowrap; }
+  header h1 span { color: var(--accent); }
+  .meta { color: var(--muted); font-size: 12px; }
+  .meta .warn { color: var(--amber); }
+  .spacer { flex: 1; }
+  button {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .layout { display: flex; align-items: stretch; flex: 1 1 auto; min-height: 0; }
+  .sidebar {
+    width: 265px; flex: 0 0 265px;
+    padding: 14px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+  }
+  /* overflow-y:auto обязателен: под таблицей теперь живут панели (портфель,
+     календарь), и без него main переполняется, а прокрутить его нельзя —
+     body overflow:hidden. Пока таблица одна, прокрутка не появляется. */
+  main { flex: 1 1 auto; padding: 14px 18px; min-width: 0; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+
+  /* три экрана — «Таблица», «Календарь», «Портфель»: вкладки в шапке,
+     на телефоне/планшете (≤900px) — закреплённая нижняя панель */
+  #view-table { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+  .tabs {
+    display: flex; gap: 4px; padding: 3px; flex: 0 0 auto;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .tab {
+    background: transparent; border: none; border-radius: 7px;
+    padding: 6px 12px; font-size: 13px; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    cursor: pointer;
+  }
+  .tab:hover { background: rgba(255,255,255,.07); color: var(--text); }
+  .tab.on { background: var(--accent); color: #fff; }
+  .tab .cnt {
+    background: var(--green); color: #04121a; border-radius: 999px;
+    font-size: 11px; font-weight: 700; padding: 0 6px; margin-left: 1px;
+  }
+
+  .fblock { margin-bottom: 16px; }
+  .fblock h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    padding: 5px 10px; border-radius: 999px; font-size: 12px;
+    background: var(--panel2); border: 1px solid var(--border); cursor: pointer;
+    user-select: none;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  label.ck {
+    display: flex; align-items: center; gap: 7px;
+    padding: 3px 0; cursor: pointer; font-size: 13px;
+  }
+  label.ck .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+  .row2 { display: flex; gap: 8px; }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 7px;
+    padding: 6px 8px; font-size: 13px; font-family: inherit;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+  .toolbar {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 10px; margin-bottom: 12px; flex: 0 0 auto;
+  }
+  .stats {
+    display: flex; flex-wrap: wrap; gap: 10px; flex: 1 1 auto;
+  }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 14px; min-width: 110px;
+  }
+  .stat .v { font-size: 17px; font-weight: 600; }
+  .stat .l { font-size: 11px; color: var(--muted); }
+
+  /* Выбор колонок */
+  .colpick { position: relative; flex: 0 0 auto; }
+  .colpanel {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px;
+    box-shadow: 0 10px 30px #0008; width: 230px; max-height: 60vh; overflow-y: auto;
+  }
+  .colpanel label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; padding: 3px 0; cursor: pointer; user-select: none;
+  }
+  .colpanel label:hover { color: var(--accent); }
+  .colpanel input { accent-color: var(--accent); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px; margin-bottom: 12px;
+  }
+  .card h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+  canvas { display: block; width: 100%; }
+
+  .table-wrap {
+    flex: 1 1 auto;
+    /* таблица занимает остаток экрана и скроллится внутри; минимум не даёт
+       ей схлопнуться в 0, заголовок закреплён sticky */
+    min-height: 200px;
+    overflow: auto;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  thead th {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--panel2);
+    text-align: right; padding: 8px 10px;
+    font-weight: 600; font-size: 12px; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; white-space: nowrap; user-select: none;
+  }
+  thead th:hover { color: var(--text); }
+  thead th.sorted { color: var(--accent); }
+  thead th.l, tbody td.l { text-align: left; }
+  tbody td { padding: 7px 10px; text-align: right; border-bottom: 1px solid #1c2231; white-space: nowrap; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #1d2432; }
+  td.limited { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .muted { color: var(--muted); }
+  .tag {
+    display: inline-block; padding: 1px 7px; border-radius: 999px;
+    font-size: 11px; background: var(--panel2); border: 1px solid var(--border);
+  }
+  .liq-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); vertical-align: middle; }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 12px; color: var(--muted); flex: 0 0 auto; flex-wrap: wrap; }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+
+  .drawer-mask {
+    position: fixed; inset: 0; background: #0009; z-index: 200;
+    display: none;
+  }
+  .drawer-mask.open { display: block; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 560px; max-width: 95vw;
+    background: var(--panel); border-left: 1px solid var(--border);
+    z-index: 201; transform: translateX(100%); transition: transform .18s ease;
+    overflow-y: auto; padding: 18px;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer h2 { margin: 0 0 2px; font-size: 18px; }
+  .drawer .close { position: absolute; top: 12px; right: 14px; }
+  .kv { display: grid; grid-template-columns: 190px 1fr; gap: 4px 12px; font-size: 13px; margin: 12px 0; }
+  .kv .k { color: var(--muted); }
+  .flags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .flag { background: #2a2130; border: 1px solid #4b3a5c; color: #d3b8f5; border-radius: 999px; padding: 2px 9px; font-size: 11px; }
+  a.ext { color: var(--accent); text-decoration: none; }
+  a.ext:hover { text-decoration: underline; }
+
+  /* ==== БЛОК 1 — «Что ищем»: крупные переключатели ==================== */
+  .filterbar {
+    flex: 0 0 auto;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px; margin-bottom: 12px;
+    display: flex; flex-direction: column; gap: 11px;
+  }
+  .fb-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .fb-lab {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .7px;
+    color: var(--muted); flex: 0 0 auto; min-width: 84px;
+  }
+  .fb-search { flex: 1 1 220px; min-width: 180px; }
+  .fb-grow { flex: 1 1 auto; }
+
+  /* крупные тумблеры-теги */
+  .tgs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tg {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border-radius: 10px; cursor: pointer;
+    background: var(--panel2); border: 1.5px solid var(--border);
+    font-size: 14px; font-weight: 600; color: var(--muted);
+    user-select: none; transition: all .12s ease;
+  }
+  .tg .tg-sub { font-weight: 400; font-size: 11px; color: var(--muted); }
+  .tg:hover { border-color: var(--accent); color: var(--text); }
+  .tg.on { color: #fff; border-color: transparent; }
+  .tg.on.tg-ofz   { background: var(--ofz); }
+  .tg.on.tg-corp  { background: var(--corp); }
+  .tg.on.tg-fix   { background: var(--accent); }
+  .tg.on.tg-float { background: var(--subfed); }
+  .tg.on.tg-ccy   { background: #4b566b; }
+  .tg .tg-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: .85; }
+
+  /* чекбоксы быстрых фильтров */
+  .qk { display: flex; gap: 8px; flex-wrap: wrap; }
+  .qk label.ck {
+    background: var(--panel2); border: 1.5px solid var(--border);
+    border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 500;
+    color: var(--muted); transition: all .12s ease;
+  }
+  .qk label.ck:hover { border-color: var(--accent); color: var(--text); }
+  .qk label.ck input { accent-color: var(--accent); }
+  .qk label.ck:has(input:checked) { background: rgba(79,140,255,.16); border-color: var(--accent); color: var(--text); }
+  /* селектор ставки НДФЛ рядом с чекбоксом «чистая доходность» */
+  .tax-sel {
+    background: var(--panel2); border: 1.5px solid var(--border); border-radius: 999px;
+    padding: 7px 10px; font-size: 13px; font-weight: 500; color: var(--muted);
+    font-family: inherit; cursor: pointer;
+    /* компактная «пилюля», а не растянутый на всю строку <select> */
+    flex: 0 0 auto; width: auto; min-width: 62px; max-width: 78px;
+  }
+  .tax-sel:disabled { opacity: .4; cursor: default; }
+  .tax-sel:not(:disabled) { border-color: var(--accent); color: var(--text); }
+
+  /* ползунок срока */
+  .slider-wrap { display: flex; align-items: center; gap: 12px; flex: 1 1 260px; min-width: 220px; }
+  .slider-wrap input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
+  .slider-val { font-size: 13px; font-weight: 600; color: var(--accent); min-width: 78px; text-align: right; }
+
+  /* ==== БЛОК 2 — таблица: цвет, плашки, «почему купить» =============== */
+  tbody tr.row-ofz td:first-child  { box-shadow: inset 3px 0 0 var(--ofz); }
+  tbody tr.row-corp td:first-child { box-shadow: inset 3px 0 0 var(--corp); }
+  tbody tr.row-ofz:hover  { background: rgba(79,140,255,.06); }
+  tbody tr.row-corp:hover { background: rgba(38,166,154,.06); }
+
+  .bdg {
+    display: inline-block; padding: 1px 7px; border-radius: 5px;
+    font-size: 10px; font-weight: 700; letter-spacing: .3px;
+    line-height: 1.5; vertical-align: middle;
+  }
+  .bdg-ofz, .bdg-subfed, .bdg-muni { color: #fff; }
+  .bdg-corp, .bdg-exch { color: #fff; }
+  .bdg-fix   { background: rgba(79,140,255,.2);  color: #9dbfff; border: 1px solid rgba(79,140,255,.4); }
+  .bdg-float { background: rgba(171,125,248,.2); color: #d3b8f5; border: 1px solid rgba(171,125,248,.4); }
+  .bdg-qval  { background: rgba(240,163,94,.22); color: #f0c9a6; border: 1px solid rgba(240,163,94,.5); }
+  /* плашка привязки плавающего купона (ЦБ +2.5% / RUONIA / ИПЦ) */
+  .bdg-base  { background: rgba(79,140,255,.18); color: #9dbcff; border: 1px solid rgba(79,140,255,.45);
+               font-weight: 600; margin-left: 6px; }
+  /* предупреждение об оферте в колонке «Срок» */
+  .offer-warn { color: var(--amber) !important; font-weight: 600; margin-left: 6px; }
+  .bdg-none  { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
+
+  .cell-name { display: flex; flex-direction: column; gap: 3px; }
+  .cell-name .nm { font-weight: 600; color: var(--text); }
+  .cell-name .badges { display: flex; gap: 5px; flex-wrap: wrap; }
+  .cell-comb { display: flex; flex-direction: column; line-height: 1.3; }
+  .cell-comb .sub { font-size: 11px; color: var(--muted); }
+  td.why { white-space: normal; min-width: 250px; max-width: 340px; text-align: left; color: #aab6c9; font-size: 12px; line-height: 1.4; }
+  td.why .why-hi { color: var(--green); font-weight: 600; }
+
+  /* кнопка «в портфель» в строке */
+  .pf-add {
+    width: 26px; height: 26px; border-radius: 7px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 16px; line-height: 1; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--muted);
+  }
+  .pf-add:hover { border-color: var(--green); color: var(--green); }
+  .pf-add.in { background: rgba(38,166,154,.2); border-color: var(--green); color: var(--green); }
+
+  /* ==== ЭКРАН 3 — конструктор портфеля: календарь выплат ============= */
+  .pf-panel {
+    flex: 0 0 auto; margin-top: 12px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px;
+    /* панель занимает собственный экран: внутренний потолок снят,
+       прокрутка — у всего экрана (main), а не у панели */
+    max-height: none; overflow-y: auto;
+  }
+  .pf-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pf-head h2 { font-size: 13px; margin: 0; color: var(--muted); font-weight: 600; }
+  .pf-target { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .pf-target input { width: 62px; }
+  .pf-goal {
+    background: var(--panel2); border: 1.5px solid var(--border); border-radius: 8px;
+    color: var(--text); font: inherit; font-size: 12px; padding: 5px 8px; cursor: pointer;
+    width: 215px;
+  }
+  .pf-total { font-size: 13px; color: var(--text); }
+  .pf-total b { color: var(--green); }
+
+  .months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 7px; }
+  .month {
+    min-width: 0;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 6px; min-height: 78px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .month.gap { border-color: rgba(240,163,94,.5); background: rgba(240,163,94,.07); }
+  .month.haspay { border-color: rgba(38,166,154,.45); }
+  .month .m-name { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); text-align: center; }
+  .month .m-sum { font-size: 12px; font-weight: 700; color: var(--green); text-align: center; }
+  .month .m-empty { font-size: 10px; color: var(--muted); text-align: center; opacity: .7; margin-top: auto; }
+  .m-pays { display: flex; flex-direction: column; gap: 2px; }
+  .m-pay {
+    font-size: 10px; display: flex; align-items: center; gap: 4px;
+    padding: 1px 4px; border-radius: 4px; background: rgba(79,140,255,.1);
+    cursor: default; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .m-pay .d { color: var(--muted); font-weight: 600; }
+  .m-pay.hit { background: rgba(38,166,154,.28); }
+  .m-pay.hit .d { color: var(--green); }
+  .m-more { font-size: 10px; color: var(--muted); text-align: center; }
+
+  .pf-advice {
+    margin-top: 10px; padding: 9px 12px; border-radius: 8px;
+    background: rgba(240,163,94,.1); border: 1px solid rgba(240,163,94,.4);
+    font-size: 12.5px; color: #f0c9a6;
+  }
+  .pf-advice b { color: var(--amber); }
+  .pf-advice button { margin-left: 8px; font-size: 12px; padding: 3px 10px; }
+  .pf-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .pf-item {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px 8px 4px 12px; font-size: 12px;
+  }
+  .pf-item button { border: none; background: none; color: var(--muted); padding: 0 2px; font-size: 14px; }
+  .pf-item button:hover { color: var(--red); }
+  .pf-empty { color: var(--muted); font-size: 13px; padding: 14px 4px; }
+
+  /* --- календарь купонов --- */
+  .cal-hint { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  .cal-hint b { color: var(--text); }
+  .cal-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cal-bar .hint { font-size: 12px; color: var(--muted); }
+  .tg.on.tg-cal { background: var(--accent); }
+  .cal-nav { display: flex; align-items: center; gap: 8px; }
+  .cal-nav button { width: 30px; height: 30px; padding: 0; font-size: 16px; line-height: 1; }
+  .cal-title { font-weight: 600; min-width: 128px; text-align: center; font-size: 13px; }
+  .cal-dow { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; }
+  .cal-dow span { font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+                  color: var(--muted); text-align: center; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .cal-day {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 7px 8px; min-height: 62px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 1px; transition: border-color .12s;
+  }
+  .cal-day:hover { border-color: var(--accent); }
+  .cal-day.out { visibility: hidden; cursor: default; }
+  .cal-day.nopay { opacity: .5; }
+  .cal-day.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .cal-day.sel { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+  .cal-dnum { font-size: 12px; font-weight: 700; color: var(--muted2); }
+  .cal-day.today .cal-dnum { color: var(--accent); }
+  .cal-day.sel .cal-dnum { color: var(--green); }
+  .cal-dcnt { font-size: 10px; color: var(--muted); margin-top: auto; }
+  .cal-damt { font-size: 12px; font-weight: 700; color: var(--green); }
+  /* чем больше выплат в дне, тем ярче подсветка */
+  .cal-day.lv1 { background: rgba(38,166,154,.08); }
+  .cal-day.lv2 { background: rgba(38,166,154,.16); }
+  .cal-day.lv3 { background: rgba(38,166,154,.28); }
+  .cal-day.lv4 { background: rgba(38,166,154,.42); }
+  .cal-day.lv4 .cal-dcnt { color: rgba(255,255,255,.85); }
+
+  .cal-list { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .cal-daysum { font-size: 13px; margin-bottom: 8px; color: var(--text); }
+  .cal-daysum b { color: var(--green); }
+  .cal-row {
+    display: grid; grid-template-columns: minmax(170px, 1fr) auto auto;
+    gap: 14px; align-items: center; padding: 8px 10px; border-radius: 8px;
+  }
+  .cal-row:nth-child(odd) { background: rgba(255,255,255,.02); }
+  .cal-rname { font-size: 13px; font-weight: 600; line-height: 1.25; }
+  .cal-rname .sub { display: block; font-weight: 400; font-size: 11px; color: var(--muted);
+                    margin-top: 2px; }
+  /* компактные метрики: значение сверху, подпись снизу */
+  .cal-rmeta { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .cm { font-size: 10px; text-transform: uppercase; letter-spacing: .3px;
+        color: var(--muted); white-space: nowrap; }
+  .cm i { display: block; font-style: normal; font-size: 13px; font-weight: 700;
+          color: var(--text); text-transform: none; letter-spacing: 0; margin-top: 1px; }
+  .cm.amt i { color: var(--green); }
+  .cm.matur i { color: var(--accent); }
+
+  .drawer .pf-cta {
+    width: 100%; padding: 11px; font-size: 14px; font-weight: 600;
+    margin: 6px 0 4px; border-color: var(--green); color: var(--green);
+  }
+  .drawer .pf-cta.in { background: rgba(38,166,154,.18); }
+
+  /* ---- мобильная раскладка (≤900px) -------------------------------- */
+  #btn-filters { display: none; }
+  #sidebar-mask { display: none; }
+  @media (max-width: 900px) {
+    header { padding: 8px 12px; gap: 10px; flex-wrap: wrap; }
+    header h1 { font-size: 14px; }
+    .meta { order: 3; flex-basis: 100%; font-size: 11px; }
+    #btn-filters { display: inline-block; }
+
+    .layout { display: block; overflow: auto; }
+    main { padding: 10px 10px 78px; } /* снизу — нижняя панель вкладок */
+
+    /* сайдбар-фильтры: выезжающая панель поверх контента */
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; z-index: 300;
+      width: 84vw; max-width: 340px; height: 100%;
+      transform: translateX(-102%);
+      transition: transform .22s ease;
+      box-shadow: 2px 0 24px #000a;
+      border-right: 1px solid var(--border);
+    }
+    .sidebar.open { transform: translateX(0); }
+    #sidebar-mask {
+      position: fixed; inset: 0; z-index: 290; background: #0009;
+      display: none;
+    }
+    #sidebar-mask.open { display: block; }
+
+    /* таблица скроллится горизонтально, лишние колонки скрыты */
+    .table-wrap { max-height: none; }
+    th.sm-hide, td.sm-hide { display: none; }
+
+    /* блок-фильтр: переключатели переносятся, поиск на всю ширину */
+    .filterbar { padding: 10px; gap: 9px; }
+    .fb-lab { min-width: 100%; margin-bottom: -4px; }
+    .tg { padding: 8px 13px; font-size: 13px; }
+    td.why { min-width: 190px; max-width: 260px; }
+
+    /* календарь портфеля: на узком экране сетка в 6, затем в 3 колонки */
+    .months { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+    /* нижняя панель вкладок — основная навигация на телефоне/планшете */
+    .tabs {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 260;
+      border: none; border-top: 1px solid var(--border); border-radius: 0;
+      background: var(--panel); gap: 6px;
+      padding: 7px 10px calc(7px + env(safe-area-inset-bottom));
+      box-shadow: 0 -8px 24px #0008;
+    }
+    .tab { flex: 1 1 0; justify-content: center; padding: 9px 4px; }
+
+    .stat { min-width: 92px; padding: 6px 10px; }
+    .kv { grid-template-columns: 130px 1fr; }
+    .drawer { width: 100vw; }
+  }
+  /* дата и статус сборки не должны выталкивать кнопки на вторую строку */
+  .meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 1240px) {
+    header { gap: 10px; }
+    /* иконки без подписей — места катастрофически не хватает на 1280px */
+    #btn-refresh span, #btn-export span { display: none; }
+  }
+  @media (max-width: 640px) {
+    .months { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 520px) {
+    #btn-refresh span, #btn-export span { display: none; }
+    .tab { font-size: 12px; gap: 4px; padding: 9px 2px; }
+    .stat .v { font-size: 15px; }
+    .qk label.ck { padding: 6px 11px; font-size: 12px; }
+    /* строка дня календаря: метрики переносятся под название */
+    .cal-row { grid-template-columns: 1fr auto; gap: 6px 10px; }
+    .cal-rmeta { grid-column: 1 / -1; gap: 4px 14px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <button id="btn-filters" title="Показать стратегии (готовые подборки)">☰ Стратегии</button>
+  <h1>Скринер <span>облигаций РФ</span></h1>
+  <div class="meta" id="meta">загрузка…</div>
+  <div class="spacer"></div>
+  <nav class="tabs" id="tabs" aria-label="Разделы скринера">
+    <button class="tab on" data-view="table"
+      title="Фильтры и таблица бумаг — главный экран">📊 Таблица</button>
+    <button class="tab" data-view="cal"
+      title="Календарь купонов по текущей выборке: какие бумаги платят в выбранный день">📅 Календарь</button>
+    <button class="tab" data-view="pf"
+      title="Собрать портфель и увидеть календарь выплат по месяцам">🧺 Портфель<span class="cnt" id="pf-count" hidden>0</span></button>
+  </nav>
+  <button id="btn-refresh" title="Принудительно перезагрузить данные с MOEX">↻ <span>Обновить</span></button>
+  <button id="btn-export" class="primary" title="Скачать отфильтрованные строки">⬇ <span>CSV</span></button>
+</header>
+
+<div id="sidebar-mask"></div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="fblock">
+      <h3>Стратегии</h3>
+      <div class="presets" id="presets"></div>
+      <div class="hint">Готовые подборки под задачу. Ручные уточнения (YTM, цена, ликвидность, валюта) внутри стратегии настраиваются backend-фильтрами.</div>
+    </div>
+  </aside>
+
+  <main>
+    <!-- ЭКРАН 1 «Таблица»: фильтры + аналитическая таблица -->
+    <div class="view" id="view-table">
+    <!-- БЛОК 1 — «Что ищем»: крупные переключатели -->
+    <div class="filterbar">
+      <div class="fb-row">
+        <input type="text" id="f-search" class="fb-search" placeholder="Поиск: тикер, ISIN, название, эмитент…">
+      </div>
+
+      <div class="fb-row">
+        <span class="fb-lab">Тип эмитента</span>
+        <div class="tgs" id="tg-issuer">
+          <span class="tg tg-ofz on" data-iss="ofz" title="Государственные: ОФЗ, субфедеральные, муниципальные">
+            <span class="tg-dot"></span> ОФЗ <span class="tg-sub">Государственные</span></span>
+          <span class="tg tg-corp on" data-iss="corp" title="Компании: корпоративные и биржевые облигации">
+            <span class="tg-dot"></span> Корпоративные <span class="tg-sub">Компании</span></span>
+        </div>
+      </div>
+
+      <div class="fb-row">
+        <span class="fb-lab">Тип купона</span>
+        <div class="tgs" id="tg-coupon">
+          <span class="tg tg-fix on" data-cpn="fix" title="Постоянный (ПД): точный доход, купоны уже известны">
+            <span class="tg-dot"></span> Фиксированный</span>
+          <span class="tg tg-float on" data-cpn="float" title="Плавающий (ПК): купон подстраивается под ключевую ставку / RUONIA">
+            <span class="tg-dot"></span> Плавающий</span>
+        </div>
+      </div>
+
+      <div class="fb-row">
+        <span class="fb-lab">Валюта</span>
+        <div class="tgs" id="tg-ccy">
+          <span class="tg tg-ccy on" data-ccy="SUR" title="Рублёвые бумаги — основной рынок">
+            ₽ Рубли</span>
+          <span class="tg tg-ccy on" data-ccy="CNY" title="Юаневые бумаги — офшорный рынок (внебиржевой) с высоким купоном">
+            ¥ Юани</span>
+        </div>
+        <div class="hint" style="flex:1 1 auto">Доллары, евро и франки скрыты — по ним мало ликвидности и они в санкционном риске</div>
+      </div>
+
+      <div class="fb-row">
+        <span class="fb-lab">Быстрые фильтры</span>
+        <div class="qk">
+          <label class="ck" title="Номинал не гасится частями — возвращается одним платежом при погашении">
+            <input type="checkbox" id="f-noamort"> Без амортизации</label>
+          <label class="ck" title="ОФЗ, субфедеральные и муниципальные бумаги — без кредитного риска корпоративов. Реальных рейтингов агентств (Эксперт РА, НКР, АКРА) скринер пока не собирает, поэтому фильтр по ним сделать нельзя">
+            <input type="checkbox" id="f-highrating"> Только госбумаги <span class="muted">(ОФЗ/субфед/муниц.)</span></label>
+          <label class="ck" title="Убрать бумаги без сделок за последний закрытый день">
+            <input type="checkbox" id="f-traded"> Торговались сегодня</label>
+          <label class="ck" title="По умолчанию квал-бумаги скрыты: их не может купить обычный инвестор">
+            <input type="checkbox" id="f-qualified"> Показать для квал-инвесторов</label>
+          <label class="ck" title="Бумаги у погашения или без сделок с нереальной доходностью (скрыты по умолчанию)">
+            <input type="checkbox" id="f-anom"> Аномальные YTM</label>
+          <label class="ck" title="Пересчитать доходность после НДФЛ. Бумаги со сроком от 3 лет показываются без налога — на них действует льгота владения">
+            <input type="checkbox" id="f-nettax"> Чистая доходность после налога</label>
+          <select id="f-taxrate" class="tax-sel" disabled
+                  title="Ставка НДФЛ: 13% — базовая, 15% — для дохода свыше 2,4 млн ₽ за год">
+            <option value="0.13">13%</option>
+            <option value="0.15">15%</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="fb-row">
+        <div class="slider-wrap" title="Срок до погашения: от 1 года до 10+ лет">
+          <span class="fb-lab" style="min-width:auto">Срок</span>
+          <input type="range" id="f-term" min="1" max="11" step="1" value="11">
+          <span class="slider-val" id="f-term-val">10+ лет</span>
+        </div>
+        <div class="fb-grow"></div>
+        <button id="btn-reset" class="ghost" title="Вернуть все фильтры по умолчанию">↺ Сбросить</button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="stats" id="stats"></div>
+      <div class="colpick">
+        <button id="btn-cols" class="ghost" title="Выбрать, какие колонки показывать в таблице">☰ Колонки</button>
+        <div id="colpanel" class="colpanel" hidden></div>
+      </div>
+    </div>
+
+    <!-- БЛОК 2 — аналитическая таблица «Как и почему» -->
+    <div class="table-wrap">
+      <table id="tbl">
+        <thead><tr id="thead-row"></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none">Ничего не найдено — ослабьте фильтры</div>
+    </div>
+    <div class="pager" id="pager"></div>
+    </div><!-- /#view-table — экран «Таблица» -->
+
+    <!-- ЭКРАН 3 — конструктор портфеля: календарь выплат по месяцам -->
+    <section class="pf-panel" id="pf-panel" hidden>
+      <div class="pf-head">
+        <h2>📅 Сборка портфеля по выплатам</h2>
+        <div class="pf-total" id="pf-total"></div>
+        <div class="spacer"></div>
+        <label class="pf-target" title="Подсветить зелёным дни, в которые приходят выплаты — например, строго 10-го числа">
+          Получать <input type="number" id="pf-day" min="1" max="31" placeholder="10"> числа
+        </label>
+        <label class="pf-target" title="Бюджет на покупку выбранных бумаг. Скринер посчитает, сколько лотов влезает, и покажет сдачу — что останется неизрасходованным">
+          Бюджет <input type="number" id="pf-budget" min="0" step="100" placeholder="50000"> ₽
+        </label>
+        <select id="pf-goal" class="pf-goal"
+          title="Что оптимизирует автосборка: ровный купон каждый месяц, выплаты каждый день, максимальная доходность или только госбумаги (ОФЗ/субфед/муниц.)">
+          <option value="even">Цель: ровный доход</option>
+          <option value="daily">Цель: выплаты каждый день</option>
+          <option value="yield">Цель: максимум доходности</option>
+          <option value="safe">Цель: только госбумаги</option>
+        </select>
+        <button id="pf-auto" class="primary"
+          title="Подобрать 3–6 бумаг под бюджет (для ежедневных выплат — до 30): только без амортизации, с живой торговлей; лоты нормируются, чтобы календарь получился максимально ровным. Работает по текущей выборке — ваши фильтры блока 1 действуют как ограничения">🤖 Автосборка</button>
+        <button id="pf-clear" title="Очистить портфель">✕ Очистить</button>
+      </div>
+      <div id="pf-auto-report"></div>
+      <div class="months" id="pf-months"></div>
+      <div id="pf-change"></div>
+      <div id="pf-advice"></div>
+      <div class="pf-list" id="pf-list"></div>
+    </section>
+
+    <!-- ЭКРАН 2 «Календарь» — по тем бумагам, что уже отфильтрованы -->
+    <section class="pf-panel cal-panel" id="cal-panel" hidden>
+      <div class="pf-head">
+        <h2>📅 Календарь купонов</h2>
+        <div class="pf-total" id="cal-total"></div>
+        <div class="spacer"></div>
+        <div class="cal-nav">
+          <button id="cal-prev" title="Предыдущий месяц">‹</button>
+          <span class="cal-title" id="cal-title"></span>
+          <button id="cal-next" title="Следующий месяц">›</button>
+        </div>
+        <button id="cal-close" title="Вернуться к таблице">✕</button>
+      </div>
+      <div class="cal-hint" id="cal-hint"></div>
+      <div class="cal-bar">
+        <span class="fb-lab" style="min-width:auto">Купон</span>
+        <div class="tgs" id="tg-calcpn">
+          <span class="tg tg-cal on" data-cpn="" title="Показать все выплаты">Все</span>
+          <span class="tg tg-cal" data-cpn="fix" title="Только фиксированный купон — сумма известна заранее">Фиксированный</span>
+          <span class="tg tg-cal" data-cpn="float" title="Только плавающий купон — пересматривается, сумма ориентировочная">Плавающий</span>
+        </div>
+        <span class="hint" id="cal-cpnhint"></span>
+      </div>
+      <div class="cal-dow" id="cal-dow"></div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div id="cal-day-box"></div>
+    </section>
+  </main>
+</div>
+
+<div class="drawer-mask" id="drawer-mask"></div>
+<aside class="drawer" id="drawer">
+  <button class="close" id="drawer-close">✕</button>
+  <div id="drawer-body"><div class="muted">Загрузка…</div></div>
+</aside>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ */
+/* Состояние                                                           */
+/* ------------------------------------------------------------------ */
+
+const GROUP_LABELS = {
+  ofz_bond:        "ОФЗ",
+  subfederal_bond: "Субфедеральные",
+  municipal_bond:  "Муниципальные",
+  corporate_bond:  "Корпоративные",
+  exchange_bond:   "Биржевые (МСК)",
+};
+const GROUP_COLORS = {
+  ofz_bond: "var(--ofz)", subfederal_bond: "var(--subfed)",
+  municipal_bond: "var(--muni)", corporate_bond: "var(--corp)",
+  exchange_bond: "var(--exch)",
+};
+
+/* Коды валют ISO 4217 (на бирже рубль -- это SUR, а не RUB) */
+const CCY_LABELS = {
+  SUR: "SUR — рубли ₽",
+  USD: "USD — доллары $",
+  EUR: "EUR — евро €",
+  CNY: "CNY — юани ¥",
+  CHF: "CHF — франки ₣",
+};
+/* Тип купона: как выплачивается доход по бумаге */
+const COUPON_LABELS = {
+  "фикс":   "фикс — все купоны уже известны",
+  "фикс?":  "фикс? — ставка фикс., но купон назначит эмитент",
+  "плав":   "плав — привязан к ключевой ставке / RUONIA / ИПЦ",
+  "нулевой":"нулевой — купонов нет, доход от дисконта",
+  "—":      "нет данных о типе",
+};
+function ccyLabel(c)   { return CCY_LABELS[c]   || c; }
+function couponLabel(k){ return COUPON_LABELS[k] || k; }
+/* "2027-03-17" -> "17.03.27" (для дат в таблице и карточке) */
+function renderDate(iso) {
+  if (!iso) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+  return m ? m[3] + "." + m[2] + "." + m[1].slice(2) : iso;
+}
+
+const state = {
+  bonds: [],
+  facets: null,
+  presets: [],
+  meta: {},
+  filtered: [],
+  sort: { key: "ytm", dir: -1 },
+  page: 1,
+  pageSize: 100,
+  activePreset: null,
+  f: defaultFilters(),
+  cols: null, // Set видимых колонок (загружается ниже из localStorage)
+  pf: [],     // Блок 3: портфель — массив secid (хранится в localStorage)
+  pfDay: null,// целевое число выплаты (1..31) или null
+  pfBudget: null, // бюджет на покупку выбранных бумаг, ₽ (для расчёта сдачи)
+  pfLots: {},     // сколько лотов каждой бумаги куплено (автасборка нормирует)
+  view: "table",  // открытый экран: "table" | "cal" | "pf" (вкладки в шапке)
+  // Календарь купонов: какой месяц показан и выбран ли день
+  calMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  calDay: null,
+  // тип купона внутри календаря: null = все, "fix" = фиксированный, "float" = плавающий
+  calCoupon: null,
+  medianYtm: null,
+};
+
+/* ------------------------------------------------------------------ */
+/* Видимые колонки (настройка пользователя, хранится в localStorage)   */
+/* ------------------------------------------------------------------ */
+const COLS_KEY = "bondScreener.cols.v2";
+
+function defaultVisibleCols() {
+  // по умолчанию скрываем колонки с флагом off:true
+  return COLUMNS.filter((c) => !c.off).map((c) => c.key);
+}
+
+function loadCols() {
+  try {
+    const raw = localStorage.getItem(COLS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length) return new Set(arr.filter((k) => COLUMNS.some((c) => c.key === k)));
+    }
+  } catch (e) { /* ignore */ }
+  return new Set(defaultVisibleCols());
+}
+
+function saveCols() {
+  try { localStorage.setItem(COLS_KEY, JSON.stringify([...state.cols])); } catch (e) { /* ignore */ }
+}
+
+function visibleCols() {
+  return COLUMNS.filter((c) => state.cols.has(c.key));
+}
+
+/* Панель выбора колонок: чекбоксы для каждой колонки */
+function renderColPanel() {
+  const panel = $("colpanel");
+  panel.innerHTML = "";
+  for (const col of COLUMNS) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = state.cols.has(col.key);
+    // закреплённая колонка — только «Бумага и тип» (её нельзя отключить)
+    const pinned = col.key === "name";
+    if (pinned) { cb.disabled = true; cb.checked = true; }
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.cols.add(col.key);
+      else state.cols.delete(col.key);
+      saveCols();
+      renderTable();
+    });
+    lab.appendChild(cb);
+    const span = document.createElement("span");
+    span.textContent = col.title;
+    lab.appendChild(span);
+    panel.appendChild(lab);
+  }
+}
+
+function defaultFilters() {
+  return {
+    search: "",
+    // Блок 1: крупные переключатели
+    issuer: new Set(["ofz", "corp"]),   // тип эмитента (обе категории включены)
+    coupon: new Set(["fix", "float"]),  // тип купона
+    noamort: false,      // только без амортизации
+    highRating: false,   // только госбумаги (ОФЗ/субфед/муниц.)
+    showQualified: false, // показать квал-бумаги (по умолчанию скрыты)
+    // Срок до погашения: ползунок пишет yearsMax (null = «10+ / любой»),
+    // yearsMin нужен пресетам (например «Долгие фикс» — от 5 лет)
+    yearsMin: null, yearsMax: null,
+    // Старые (расширенные) фильтры в сайдбаре
+    // Валюта: по умолчанию только рубли и юани — доллары/евро/франки скрыты
+    currencies: new Set(["SUR", "CNY"]),
+    ytmMin: null, ytmMax: null,
+    priceMin: null, priceMax: null,
+    durMin: null, durMax: null,
+    spreadMin: null, spreadMax: null,
+    liqMin: null, turnoverMin: null, complexityMax: null,
+    traded: false, taxfree: false, anomalies: false,
+    // Чистая доходность после НДФЛ: netTax включает пересчёт, taxRate --
+    // 13% (базовая) или 15% (для дохода свыше 2,4 млн ₽ в год)
+    netTax: false, taxRate: 0.13,
+  };
+}
+
+/* Группы типа эмитента → подмножества type_key (для переключателей) */
+const ISSUER_TYPES = {
+  ofz:  ["ofz_bond", "subfederal_bond", "municipal_bond"],
+  corp: ["corporate_bond", "exchange_bond"],
+};
+/* Тип купона → подмножества coupon_kind (фикс? относим к фиксированному) */
+const COUPON_TYPES = {
+  fix:   ["фикс", "фикс?"],
+  float: ["плав"],
+};
+
+/* ------------------------------------------------------------------ */
+/* Утилиты                                                             */
+/* ------------------------------------------------------------------ */
+
+const $ = (id) => document.getElementById(id);
+const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+const fmt = (v, d = 2) =>
+  v === null || v === undefined || Number.isNaN(Number(v)) ? "—" : Number(v).toFixed(d);
+const fmtInt = (v) =>
+  v === null || v === undefined ? "—" : Math.round(Number(v)).toLocaleString("ru-RU");
+
+function between(val, lo, hi) {
+  if (val === null || val === undefined) return lo === null && hi === null;
+  if (lo !== null && val < lo) return false;
+  if (hi !== null && val > hi) return false;
+  return true;
+}
+
+function medianOf(arr) {
+  if (!arr.length) return null;
+  const a = [...arr].sort((x, y) => x - y);
+  return a[Math.floor(a.length / 2)];
+}
+
+/* ------------------------------------------------------------------ */
+/* Загрузка данных                                                     */
+/* ------------------------------------------------------------------ */
+
+let STATIC_MODE = false; // GitHub Pages: API нет, данные лежат рядом (data.json)
+
+async function loadData() {
+  $("meta").textContent = "загрузка данных…";
+  $("btn-refresh").disabled = true;
+  try {
+    let r = await fetch("/api/screener");
+    if (r.status === 404) {
+      // статичный хостинг (GitHub Pages): берём data.json рядом со страницей
+      STATIC_MODE = true;
+      $("btn-refresh").style.display = "none"; // ручная пересборка недоступна
+      r = await fetch("./data.json");
+    }
+    if (r.status === 503) {
+      // холодный старт сервера: снапшот собирается с нуля (~2–4 мин)
+      $("meta").innerHTML = '<span class="warn">первичная сборка снапшота (~2–4 мин)… страница обновится сама</span>';
+      pollUntilReady(120);
+      return; // finally разблокирует кнопку
+    }
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    state.bonds = data.bonds || [];
+    state.facets = data.facets || {};
+    state.meta = data.meta || {};
+    state.statsAll = data.stats || {};
+    state.medianYtm = medianOf(state.bonds.filter((b) => b.ytm !== null && !b.anomaly).map((b) => b.ytm));
+    renderMeta();
+    apply();
+  } catch (e) {
+    $("meta").innerHTML = '<span class="warn">ошибка загрузки: ' + esc(e) + "</span>";
+  } finally {
+    $("btn-refresh").disabled = false;
+  }
+}
+
+async function loadPresets() {
+  try {
+    let src;
+    const r = await fetch("/api/presets");
+    if (r.ok) {
+      src = await r.json();
+    } else {
+      // статичный режим: пресеты лежат внутри data.json
+      src = await (await fetch("./data.json")).json();
+    }
+    state.presets = src.presets || [];
+    renderPresets();
+  } catch (e) { /* нет пресетов -- не критично */ }
+}
+
+function renderMeta() {
+  const m = state.meta;
+  let html = "";
+  if (m.trade_date_human) {
+    html += "данные за <b>" + esc(m.trade_date_human) + "</b>";
+  }
+  if (m.from_history && m.total_bonds) {
+    html += " · " + fmtInt(m.from_history) + " из " + fmtInt(m.total_bonds) + " бумаг с итогами дня";
+  }
+  if (m.update_at) html += " · обновление в " + esc(m.update_at) + " МСК";
+  if (m.load_seconds) html += " · сборка " + m.load_seconds + " c";
+  if (m.refreshing) html += ' · <span class="warn">идёт пересборка…</span>';
+  if (m.errors && m.errors.length) html += ' · <span class="warn">' + esc(m.errors.join("; ")) + "</span>";
+  $("meta").innerHTML = html || "нет данных";
+}
+
+/* ------------------------------------------------------------------ */
+/* Фильтры: построение UI                                              */
+/* ------------------------------------------------------------------ */
+
+function bindAll() {
+  let tmr = null;
+  $("f-search").addEventListener("input", () => {
+    clearTimeout(tmr);
+    tmr = setTimeout(() => { state.f.search = $("f-search").value.trim().toLowerCase(); apply(); }, 250);
+  });
+  // --- Блок 1: крупные переключатели и быстрые фильтры ----------------
+  const bindQuick = (id, prop) => {
+    $(id).addEventListener("change", (e) => {
+      state.f[prop] = e.target.checked; clearPreset(); apply();
+    });
+  };
+  bindQuick("f-noamort", "noamort");
+  bindQuick("f-highrating", "highRating");
+  bindQuick("f-qualified", "showQualified");
+  bindQuick("f-traded", "traded");
+  bindQuick("f-anom", "anomalies");
+
+  // Чистая доходность после налога: включаем пересчёт и разблокируем
+  // выбор ставки (13% базовая / 15% для дохода свыше 2,4 млн ₽ в год)
+  $("f-nettax").addEventListener("change", (e) => {
+    state.f.netTax = e.target.checked;
+    $("f-taxrate").disabled = !e.target.checked;
+    clearPreset(); apply();
+  });
+  $("f-taxrate").addEventListener("change", (e) => {
+    state.f.taxRate = Number(e.target.value);
+    apply();
+  });
+
+  const bindToggleGroup = (sel, key, dataKey) => {
+    document.querySelectorAll(sel + " .tg").forEach((el) => {
+      el.addEventListener("click", () => {
+        const v = el.dataset[dataKey];
+        const cur = state.f[key];
+        if (cur.has(v)) cur.delete(v); else cur.add(v);
+        if (cur.size === 0) cur.add(v); // не даём выключить последнюю категорию
+        clearPreset(); syncToggles(); apply();
+      });
+    });
+  };
+  bindToggleGroup("#tg-issuer", "issuer", "iss");
+  bindToggleGroup("#tg-coupon", "coupon", "cpn");
+  bindToggleGroup("#tg-ccy", "currencies", "ccy");
+
+  const termEl = $("f-term"), termVal = $("f-term-val");
+  termEl.addEventListener("input", () => {
+    const v = Number(termEl.value);
+    state.f.yearsMax = v >= 11 ? null : v;
+    termVal.textContent = v >= 11 ? "10+ лет" : "до " + v + " " + pluralYears(v);
+    clearPreset(); apply();
+  });
+
+  $("btn-reset").addEventListener("click", () => {
+    state.f = defaultFilters();
+    syncInputs();
+    clearPreset();
+    apply();
+  });
+
+  // мобильная панель фильтров (кнопка «☰ Фильтры» + маска)
+  const side = document.querySelector(".sidebar");
+  const smask = $("sidebar-mask");
+  const closeSide = () => { side.classList.remove("open"); smask.classList.remove("open"); };
+  $("btn-filters").addEventListener("click", () => {
+    side.classList.toggle("open");
+    smask.classList.toggle("open", side.classList.contains("open"));
+  });
+  smask.addEventListener("click", closeSide);
+  // закрытие панели после выбора пресета/сброса на мобильном
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSide(); });
+
+  // панель выбора колонок
+  const colBtn = $("btn-cols");
+  const colPanel = $("colpanel");
+  colBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    colPanel.hidden = !colPanel.hidden;
+  });
+  document.addEventListener("click", (e) => {
+    if (!colPanel.hidden && !colPanel.contains(e.target) && e.target !== colBtn) {
+      colPanel.hidden = true;
+    }
+  });
+  $("btn-refresh").addEventListener("click", async () => {
+    if (STATIC_MODE) { location.reload(); return; } // статичный режим
+    const btn = $("btn-refresh");
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = "…";
+    try {
+      const r = await fetch("/api/refresh", { method: "POST" });
+      const d = await r.json();
+      // сборка в фоне (~2 мин): опрашиваем и перезагружаем данные
+      $("meta").innerHTML = '<span class="warn">идёт пересборка снапшота (~2 мин)…</span>';
+      pollUntilReady();
+    } catch (e) {
+      $("meta").innerHTML = '<span class="warn">ошибка: ' + esc(e) + "</span>";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = old;
+    }
+  });
+  $("drawer-close").addEventListener("click", closeDrawer);
+  $("drawer-mask").addEventListener("click", closeDrawer);
+  $("btn-export").addEventListener("click", exportCsv);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+
+  // --- Три экрана: переключение вкладками «Таблица / Календарь / Портфель»
+  $("tabs").addEventListener("click", (e) => {
+    const t = e.target.closest(".tab");
+    if (t) setView(t.dataset.view);
+  });
+
+  // --- Календарь купонов ---------------------------------------------
+  $("cal-close").addEventListener("click", () => setView("table"));
+  $("cal-prev").addEventListener("click", () => {
+    state.calMonth = addMonths(state.calMonth, -1);
+    state.calDay = null;
+    renderCal();
+  });
+  $("cal-next").addEventListener("click", () => {
+    state.calMonth = addMonths(state.calMonth, 1);
+    state.calDay = null;
+    renderCal();
+  });
+  // фильтр типа купона внутри календаря: Все / Фиксированный / Плавающий
+  $("tg-calcpn").addEventListener("click", (e) => {
+    const el = e.target.closest(".tg");
+    if (!el) return;
+    state.calCoupon = el.dataset.cpn || null;
+    renderCal();
+  });
+  // клик по дню: выбрать/снять выбор (пустые дни игнорируем)
+  $("cal-grid").addEventListener("click", (e) => {
+    const cell = e.target.closest(".cal-day");
+    if (!cell || cell.classList.contains("out")) return;
+    const d = +cell.dataset.day;
+    state.calDay = state.calDay === d ? null : d;
+    renderCal();
+  });
+  // «+» в списке выплат дня -> добавить бумагу в портфель
+  $("cal-day-box").addEventListener("click", (e) => {
+    const btn = e.target.closest(".pf-add");
+    if (btn) togglePf(btn.dataset.s);
+  });
+  $("pf-clear").addEventListener("click", () => {
+    state.pf = []; state.pfLots = {};
+    savePf(); savePfLots(); renderPfUi(); renderTable();
+  });
+  // автосборка: подбор 3–6 бумаг и лотов под бюджет и цель
+  $("pf-auto").addEventListener("click", autoAssemble);
+  $("pf-day").addEventListener("input", (e) => {
+    const v = parseInt(e.target.value, 10);
+    state.pfDay = v >= 1 && v <= 31 ? v : null;
+    savePfDay(); renderPf();
+  });
+  // бюджет на покупку: сколько лотов влезает и сколько остаётся сдачи
+  $("pf-budget").addEventListener("input", (e) => {
+    const v = parseFloat(e.target.value);
+    state.pfBudget = isFinite(v) && v > 0 ? v : null;
+    savePfBudget(); renderPf();
+  });
+  // клики по кнопкам «+» в строках таблицы (capture, чтобы не открывалась карточка)
+  $("tbody").addEventListener("click", (e) => {
+    const add = e.target.closest(".pf-add");
+    if (add) { e.preventDefault(); e.stopPropagation(); togglePf(add.dataset.s); }
+  }, true);
+  // клики внутри панели портфеля (рекомендации и удаление)
+  $("pf-panel").addEventListener("click", (e) => {
+    const t = e.target.closest("button[data-s]");
+    if (t) togglePf(t.dataset.s);
+  });
+  // CTA в карточке бумаги
+  $("drawer-body").addEventListener("click", (e) => {
+    const cta = e.target.closest(".pf-cta");
+    if (!cta) return;
+    togglePf(cta.dataset.s);
+    const now = state.pf.indexOf(cta.dataset.s) >= 0;
+    cta.classList.toggle("in", now);
+    cta.textContent = now ? "✓ В портфеле — убрать" : "＋ Добавить в конструктор портфеля";
+  });
+}
+
+// Ожидание окончания фоновой пересборки: опрашиваем /api/screener,
+// пока refreshing не станет false, затем перезагружаем данные.
+async function pollUntilReady(tries = 40) {
+  for (let i = 0; i < tries; i++) {
+    await new Promise((res) => setTimeout(res, 5000));
+    try {
+      const r = await fetch("/api/screener");
+      if (r.status === 503) {
+        // снапшот ещё собирается с нуля (холодный старт сервера)
+        $("meta").innerHTML = '<span class="warn">идёт первичная сборка снапшота (~2–4 мин)…</span>';
+        continue;
+      }
+      const d = await r.json();
+      if (!d.bonds || !d.bonds.length || (d.meta && d.meta.refreshing)) {
+        $("meta").innerHTML = '<span class="warn">идёт пересборка снапшота… осталось подождать</span>';
+        continue;
+      }
+      state.bonds = d.bonds;
+      state.facets = d.facets || {};
+      state.meta = d.meta || {};
+      state.statsAll = d.stats || {};
+      state.medianYtm = medianOf(state.bonds.filter((b) => b.ytm !== null && !b.anomaly).map((b) => b.ytm));
+      renderMeta();
+      apply();
+      return;
+    } catch (e) { /* сбой опроса не критичен, повторим */ }
+  }
+  $("meta").innerHTML = '<span class="warn">пересборка занимает дольше обычного — обновите страницу позже</span>';
+}
+
+function syncInputs() {
+  $("f-search").value = state.f.search || "";
+  $("f-traded").checked = !!state.f.traded;
+  $("f-anom").checked = !!state.f.anomalies;
+  $("f-qualified").checked = !!state.f.showQualified;
+  syncToggles();
+}
+
+/* Синхронизация крупных переключателей (Блок 1) с state.f */
+function syncToggles() {
+  document.querySelectorAll("#tg-issuer .tg").forEach((el) => {
+    el.classList.toggle("on", state.f.issuer.has(el.dataset.iss));
+  });
+  document.querySelectorAll("#tg-coupon .tg").forEach((el) => {
+    el.classList.toggle("on", state.f.coupon.has(el.dataset.cpn));
+  });
+  document.querySelectorAll("#tg-ccy .tg").forEach((el) => {
+    el.classList.toggle("on", state.f.currencies.has(el.dataset.ccy));
+  });
+  $("f-noamort").checked = !!state.f.noamort;
+  $("f-highrating").checked = !!state.f.highRating;
+  $("f-nettax").checked = !!state.f.netTax;
+  $("f-taxrate").disabled = !state.f.netTax;
+  $("f-taxrate").value = String(state.f.taxRate || 0.13);
+  // ползунок срока: yearsMax=null → «10+» (значение 11)
+  const tv = state.f.yearsMax === null || state.f.yearsMax === undefined
+    ? 11 : Math.min(11, Math.max(1, Math.round(state.f.yearsMax)));
+  $("f-term").value = tv;
+  $("f-term-val").textContent = tv >= 11 ? "10+ лет" : "до " + tv + " " + pluralYears(tv);
+}
+
+function pluralYears(n) {
+  const n10 = n % 10, n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return "год";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return "года";
+  return "лет";
+}
+
+/* ------------------------------------------------------------------ */
+/* Пресеты                                                             */
+/* ------------------------------------------------------------------ */
+
+function renderPresets() {
+  const box = $("presets");
+  box.innerHTML = "";
+  for (const p of state.presets) {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.textContent = p.title;
+    chip.title = p.desc || "";
+    chip.dataset.id = p.id;
+    chip.addEventListener("click", () => applyPreset(p, chip));
+    box.appendChild(chip);
+  }
+}
+
+function clearPreset() {
+  state.activePreset = null;
+  document.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
+}
+
+function applyPreset(p, chip) {
+  if (state.activePreset === p.id) { // повторный клик -- снять пресет
+    state.f = defaultFilters(); syncInputs(); clearPreset(); apply(); return;
+  }
+  state.f = defaultFilters();
+  const f = p.filters || {};
+  const set = (key, val) => { if (val !== undefined && val !== null) state.f[key] = val; };
+  // type_key → переключатель «Тип эмитента» (ОФЗ / Корпоративные)
+  const tks = f.type_key || [];
+  if (tks.length) {
+    const hasOfz = tks.some((k) => ISSUER_TYPES.ofz.includes(k));
+    const hasCorp = tks.some((k) => ISSUER_TYPES.corp.includes(k));
+    state.f.issuer = new Set();
+    if (hasOfz) state.f.issuer.add("ofz");
+    if (hasCorp) state.f.issuer.add("corp");
+    if (!state.f.issuer.size) state.f.issuer = new Set(["ofz", "corp"]);
+  }
+  // coupon_kinds → переключатель «Тип купона» (Фикс / Плав)
+  const cks = f.coupon_kinds || [];
+  if (cks.length) {
+    const hasFix = cks.some((k) => COUPON_TYPES.fix.includes(k));
+    const hasFloat = cks.some((k) => COUPON_TYPES.float.includes(k));
+    state.f.coupon = new Set();
+    if (hasFix) state.f.coupon.add("fix");
+    if (hasFloat) state.f.coupon.add("float");
+    if (!state.f.coupon.size) state.f.coupon = new Set(["fix", "float"]);
+  }
+  // currency: пресет задаёт набор целиком (например «рублёвые» → только SUR)
+  const ccys = f.currency || [];
+  if (ccys.length) state.f.currencies = new Set(ccys);
+  set("ytmMin", f.ytm_min); set("ytmMax", f.ytm_max);
+  set("yearsMin", f.years_min); set("yearsMax", f.years_max);
+  set("liqMin", f.liq_min); set("spreadMin", f.spread_ofz_min);
+  set("complexityMax", f.complexity_max);
+  set("turnoverMin", f.turnover_min ? f.turnover_min / 1e6 : null);
+  if (f.tax_free) state.f.taxfree = true;
+  if (f.traded_today) state.f.traded = true;
+  if (f.no_amort) state.f.noamort = true;
+  if (f.high_rating) state.f.highRating = true;
+  syncInputs();
+  clearPreset();
+  chip.classList.add("active");
+  state.activePreset = p.id;
+  apply();
+}
+
+/* ------------------------------------------------------------------ */
+/* Фильтрация / сортировка                                             */
+/* ------------------------------------------------------------------ */
+
+function matches(b) {
+  const f = state.f;
+  if (!f.anomalies && b.anomaly) return false;
+  if (f.search) {
+    const hay = ((b.secid || "") + " " + (b.isin || "") + " " + (b.name || "") +
+                 " " + (b.full || "") + " " + (b.emitent || "")).toLowerCase();
+    if (!hay.includes(f.search)) return false;
+  }
+  // Блок 1 — тип эмитента: объединение выбранных категорий
+  const issTypes = [];
+  for (const k of f.issuer) issTypes.push(...(ISSUER_TYPES[k] || []));
+  if (!issTypes.includes(b.type_key)) return false;
+  // Блок 1 — тип купона: обе категории = без фильтра (показываем и нулевые/без данных)
+  if (f.coupon.size === 1) {
+    const kinds = [].concat(...[...f.coupon].map((k) => COUPON_TYPES[k] || []));
+    if (!kinds.includes(b.coupon_kind)) return false;
+  } else if (f.coupon.size === 0) {
+    return false; // ничего не выбрано — не показываем
+  }
+  // Блок 1 — быстрые фильтры
+  if (f.noamort && b.amortized) return false;
+  // «Только госбумаги»: фильтруем по типу эмитента, а не по рейтингу --
+  // реальных рейтингов агентств скринер не собирает (см. README)
+  if (f.highRating && !isGov(b.type_key)) return false;
+  // квал-бумаги по умолчанию скрыты: обычный инвестор их не может купить
+  if (b.qualified_only && !f.showQualified) return false;
+  if (f.currencies.size && !f.currencies.has(b.currency)) return false;
+  if (!between(b.ytm, f.ytmMin, f.ytmMax)) return false;
+  if (!between(b.years, f.yearsMin, f.yearsMax)) return false;
+  if (!between(b.price, f.priceMin, f.priceMax)) return false;
+  if (!between(b.duration, f.durMin, f.durMax)) return false;
+  if (!between(b.spread_ofz, f.spreadMin, f.spreadMax)) return false;
+  if (!between(b.liq, f.liqMin, null)) return false;
+  if (!between(b.turnover === 0 ? 0 : b.turnover, f.turnoverMin === null ? null : f.turnoverMin * 1e6, null)) return false;
+  if (f.complexityMax !== null && (b.complexity || 0) > f.complexityMax) return false;
+  if (f.traded && !b.traded_today) return false;
+  if (f.taxfree && !b.tax_free_ok) return false;
+  return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* Блок 2: ячейки таблицы «Как и почему»                               */
+/* ------------------------------------------------------------------ */
+
+const ISS_BADGE = {
+  ofz_bond:        ["ОФЗ",    "var(--ofz)"],
+  subfederal_bond: ["Субфед", "var(--subfed)"],
+  municipal_bond:  ["Мун",    "var(--muni)"],
+  corporate_bond:  ["Корп",   "var(--corp)"],
+  exchange_bond:   ["Бирж",   "var(--exch)"],
+};
+
+function isGov(tk) {
+  return tk === "ofz_bond" || tk === "subfederal_bond" || tk === "municipal_bond";
+}
+
+function couponBadge(kind) {
+  if (kind === "фикс" || kind === "фикс?") return '<span class="bdg bdg-fix">Фикс</span>';
+  if (kind === "плав") return '<span class="bdg bdg-float">Плав</span>';
+  if (kind === "нулевой") return '<span class="bdg bdg-none">Нулевой</span>';
+  return "";
+}
+
+/* Название + плашки типа и купона, кнопка «в портфель» */
+function renderNameCell(v, b) {
+  const ib = ISS_BADGE[b.type_key] || ["Прочее", "var(--other)"];
+  const inPf = state.pf.indexOf(b.secid) >= 0;
+  return '<div class="cell-name">' +
+    '<div class="nm-row"><span class="nm">' + esc(b.name || b.secid) + "</span>" +
+    '<button class="pf-add' + (inPf ? " in" : "") + '" data-s="' + esc(b.secid) + '" ' +
+    'title="' + (inPf ? "Убрать из портфеля" : "Добавить в конструктор портфеля") + '">' +
+    (inPf ? "✓" : "+") + "</button></div>" +
+    '<div class="badges"><span class="bdg" style="background:' + ib[1] + '">' + ib[0] + "</span>" +
+    couponBadge(b.coupon_kind) +
+    (b.qualified_only ? '<span class="bdg bdg-qval" title="Только для квалифицированных инвесторов — обычный инвестор купить не может">Квал</span>' : "") +
+    "</div></div>";
+}
+
+function freqLabel(b) {
+  const cpy = b.coupon_per_year;
+  if (!cpy || b.coupon_kind === "нулевой") return "без купона";
+  const n = Math.round(cpy);
+  if (Math.abs(cpy - n) > 0.15) return fmt(cpy, 1) + " выпл./год";
+  if (n >= 12) return "ежемесячно";
+  if (n === 6) return "раз в 2 месяца";
+  if (n === 4) return "ежеквартально";
+  if (n === 3) return "3 раза в год";
+  if (n === 2) return "2 раза в год";
+  if (n === 1) return "1 раз в год";
+  if (n < 1) return "раз в " + Math.round(12 / cpy) + " мес";
+  return n + " раз(а) в год";
+}
+
+/* Плашка привязки плавающего купона: ЦБ +2.5% / RUONIA / ИПЦ.
+   У плавающего купона доходность пересматривается, поэтому одно лишь
+   число YTM вводит в заблуждение -- важно показать, ОТ ЧЕГО он зависит. */
+function couponBaseBadge(b) {
+  if (b.coupon_kind !== "плав" || !b.coupon_base) return "";
+  const base = b.coupon_base;
+  let txt, hint;
+  if (base === "ЦБ" && b.coupon_spread !== null && b.coupon_spread !== undefined) {
+    const sp = b.coupon_spread;
+    txt = "ЦБ " + (sp >= 0 ? "+" : "−") + fmt(Math.abs(sp), 1) + "%";
+    hint = "Купон = ключевая ставка ЦБ " + (sp >= 0 ? "плюс " : "минус ") +
+           fmt(Math.abs(sp), 1) + " п.п. При снижении ставки ЦБ купон упадёт, при повышении -- вырастет";
+  } else if (base === "ЦБ") {
+    txt = "ЦБ";
+    hint = "Купон привязан к ключевой ставке ЦБ (спред MOEX не сообщил)";
+  } else if (base === "RUONIA") {
+    txt = "RUONIA";
+    hint = "Купон привязан к ставке RUONIA (межбанковская ставка по overnight-репо). Следует за рынком, обычно выше ключевой ЦБ";
+  } else if (base === "ИПЦ") {
+    txt = "ИПЦ";
+    hint = "Купон индексируется по инфляции (индекс потребительских цен) -- защита от обесценения денег";
+  } else {
+    txt = base;
+    hint = "Купон пересматривается по базе: " + base;
+  }
+  return '<span class="bdg bdg-base" title="' + esc(hint) + '">' + esc(txt) + "</span>";
+}
+
+function renderCpnFreq(v, b) {
+  const cpn = b.coupon_pct;
+  return '<div class="cell-comb"><span>' +
+    (cpn === null || cpn === undefined ? "—" : fmt(cpn, 2) + "%") +
+    couponBaseBadge(b) +
+    '</span><span class="sub">' + esc(freqLabel(b)) + "</span></div>";
+}
+
+function renderTerm(v, b) {
+  const y = b.years;
+  let top = "—";
+  if (y !== null && y !== undefined) {
+    const r = y >= 10 ? Math.round(y) : Math.round(y * 10) / 10;
+    top = r + " " + pluralYears(r);
+  }
+  // Оферта (PUT владельцев / выкуп CALL эмитентом) закрывает бумагу раньше
+  // погашения -- показываем дату, чтобы срок не вводил в заблуждение.
+  const off = b.offer && b.offer.nearest;
+  const offSub = off
+    ? '<span class="sub offer-warn" title="Ближайшая оферта: инвестор может вернуть бумагу по номиналу, либо эмитент выкупит её досрочно. Реальный срок -- до этой даты">⚠ оферта ' +
+      renderDate(off) + "</span>"
+    : "";
+  return '<div class="cell-comb"><span>' + top + offSub + '</span><span class="sub">' +
+    (renderDate(b.matdate) || "—") + "</span></div>";
+}
+
+/* «Почему стоит купить?» -- набор шаблонов-триггеров.
+   Порядок важен: от самого сильного аргумента к слабому. Первым делом
+   отсекаем стрессовые бумаги -- раньше они получали хвалебный текст
+   («короткий срок: быстрый возврат»), хотя доходность 95% означает, что
+   рынок ждёт дефолта. Честность здесь важнее красивых слов. */
+function buyReason(b) {
+  const gov = isGov(b.type_key);
+  const ytm = b.ytm, cpn = b.coupon_pct, y = b.years, med = state.medianYtm;
+  const sp = b.spread_ofz, liq = b.liq;
+  const offSoon = b.offer && b.offer.nearest;
+
+  // 1. Стресс: доходность несуразная -- бумага почти наверняка в дефолте
+  //    или гасится по низкой цене. Такие скрыты по умолчанию, но если
+  //    пользователь включил «Аномальные YTM» -- объясняем честно.
+  if (b.anomaly) {
+    return "⚠ В стрессе: доходность " + fmt(ytm, 0) + "% — рынок ждёт дефолта " +
+           "или погашения по низкой цене. Не «быстрый возврат», а риск не вернуть деньги.";
+  }
+
+  // 2. Оферта скоро: бумага закроется раньше срока, вся доходность -- под «ЗДРАВСТВУЙТЕ»
+  if (offSoon) {
+    const off = b.offer.nearest;
+    return "⚠ Оферта " + renderDate(off) + ": эмитент или инвестор закроют бумагу " +
+           "раньше погашения — срок и доходность пересчитаются.";
+  }
+
+  // 3. Госбумаги: отдельная логика, кредитного риска нет вообще
+  if (gov) {
+    if (b.coupon_kind === "плав" && b.coupon_base === "ЦБ" && b.coupon_spread !== null) {
+      return "Защита от снижения ставки: купон = ЦБ " +
+             (b.coupon_spread >= 0 ? "+" : "−") + fmt(Math.abs(b.coupon_spread), 1) +
+             "% — при падении ключевой ставки выплаты подтянутся.";
+    }
+    if (b.coupon_kind === "плав") {
+      return "Плавающий купон (база " + (b.coupon_base || "рынок") +
+             "): выплаты пересматриваются вслед за ставкой — защита от её смены.";
+    }
+    if (y !== null && y !== undefined && y >= 4) {
+      return "Фиксирует высокую ставку на " + fmt(y, 1) + " лет без риска дефолта — " +
+             "ставка на снижение ЦБ." + (cpn !== null ? " Купон " + fmt(cpn, 1) + "%." : "");
+    }
+    return "Госбумага без кредитного риска" +
+           (cpn !== null && cpn !== undefined ? " с купоном " + fmt(cpn, 1) + "%" : "") +
+           (ytm !== null && ytm !== undefined ? " и доходностью " + fmt(ytm, 1) + "%" : "") + " — база портфеля.";
+  }
+
+  // 4. Амортизация: номинал гасится частями, «доходность до погашения» врёт
+  if (b.amortized) {
+    return "Амортизация: номинал возвращается частями — фактическая доходность " +
+           "ниже заявленной " + (ytm !== null ? fmt(ytm, 1) + "%" : "") + ". Смотрите график платежей.";
+  }
+
+  // 5. Льгота 3+ года (ИИС/долгие бумаги): купон не облагается НДФЛ
+  if (b.tax_free_ok) {
+    return "Льгота 3+ года: купонный доход без НДФЛ при удержании — " +
+           "чистая доходность " + (ytm !== null ? fmt(ytm, 1) + "%" : "выше") + " (не 87% от неё).";
+  }
+
+  // 6. Плавающий купон у корпоратива: объясняем привязку, а не сухой YTM
+  if (b.coupon_kind === "плав") {
+    const base = b.coupon_base ? " (" + b.coupon_base + ")" : "";
+    return "Плавающий купон" + base + ": при снижении ставки ЦБ доход упадёт, " +
+           "при повышении — вырастет. YTM " + (ytm !== null ? fmt(ytm, 1) + "%" : "—") + " считан по текущему купону.";
+  }
+
+  // 7. Премия к рынку: главный аргумент ВДО
+  if (sp !== null && sp !== undefined && sp >= 3) {
+    return "Премия " + fmt(sp, 1) + " п.п. к кривой ОФЗ на тот же срок — " +
+           (liq !== null && liq !== undefined && liq >= 40
+             ? "эмитент ликвиден, риск оплачен доходностью."
+             : "риск эмитента оплачен доходностью, но ликвидность слабая.");
+  }
+
+  // 8. Высокая ликвидность: легко войти и выйти
+  if (liq !== null && liq !== undefined && liq >= 60) {
+    return "Ликвидная бумага (оборот " + fmtInt((b.turnover || 0) / 1e6) + " млн ₽/день) — " +
+           (ytm !== null && ytm !== undefined ? "доходность " + fmt(ytm, 1) + "%" : "удобный актив") +
+           ", легко продать без потери в цене.";
+  }
+
+  // 9. Доходность заметно выше медианы рынка
+  if (ytm !== null && ytm !== undefined && med !== null && ytm >= med + 3) {
+    return "Доходность " + fmt(ytm, 1) + "% против медианы рынка " + fmt(med, 1) + "% — " +
+           "премия " + fmt(ytm - med, 1) + " п.п." +
+           (y !== null && y !== undefined && y <= 1.5 ? " Короткий срок — быстрый возврат денег." : "");
+  }
+
+  // 10. Короткий срок: аргумент для консервативных
+  if (y !== null && y !== undefined && y <= 1.5) {
+    return "Короткий срок (" + fmt(y, 1) + " года): быстрый возврат денег" +
+           (ytm !== null && ytm !== undefined ? " при доходности " + fmt(ytm, 1) + "%" : "") +
+           " — минимум процентного риска.";
+  }
+
+  // 11. Ровный доход: умолчание
+  return "Стабильный доход" + (cpn !== null && cpn !== undefined ? " купоном " + fmt(cpn, 1) + "%" : "") +
+         (ytm !== null && ytm !== undefined ? " и доходностью к погашению " + fmt(ytm, 1) + "%" : "") +
+         (offSoon ? "" : " — держите до погашения.");
+}
+
+function renderWhy(v, b) { return esc(buyReason(b)); }
+
+/* Эффективная доходность для показа: с учётом НДФЛ, если включён
+   фильтр «чистая доходность». Бумаги со сроком от 3 лет получают льготу
+   владения (купон не облагается), поэтому для них налог не вычитаем. */
+function effYtm(b) {
+  if (!state.f.netTax || b.ytm === null || b.ytm === undefined) return b.ytm;
+  if (b.tax_free_ok) return b.ytm;               // льгота 3+ года: без налога
+  const rate = state.f.taxRate || 0.13;
+  const taxed = rate === 0.15 ? b.ytm_taxed15 : b.ytm_taxed;
+  return taxed !== null && taxed !== undefined ? taxed : b.ytm * (1 - rate);
+}
+
+const COLUMNS = [
+  { key: "name",     title: "Бумага и тип",   type: "s", left: true, html: true, limited: true,
+    val: (b) => b.name || b.secid, render: renderNameCell },
+  { key: "ytm",      title: "Доходность",     type: "n", d: 1,
+    val: (b) => effYtm(b),
+    hint: "Доходность к погашению (YTM): сколько % годовых вы получите, купив по текущей цене и держа до погашения. С включённым фильтром «чистая доходность» — после НДФЛ",
+    cls: (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "") },
+  { key: "cpn_freq", title: "Купон и частота", type: "n", html: true,
+    val: (b) => b.coupon_pct, render: renderCpnFreq,
+    hint: "Текущая купонная ставка и как часто приходят выплаты. У плавающих — плашка с базой привязки (ЦБ / RUONIA / ИПЦ)" },
+  { key: "term",     title: "Срок",           type: "n", html: true,
+    val: (b) => b.years, render: renderTerm,
+    hint: "Остаточный срок до погашения и сама дата погашения. Если у бумаги есть оферта — показываем и её дату" },
+  { key: "next_coupon", title: "След. купон", type: "s", render: renderDate,
+    hint: "Ближайшая дата выплаты купона — когда на счёт придут очередные проценты" },
+  { key: "why",      title: "Почему стоит купить?", type: "n", left: true, html: true,
+    val: (b) => (b.ytm === null || b.ytm === undefined ? -1e9 : b.ytm), render: renderWhy,
+    hint: "Короткий вывод по бумаге: надёжность, доходность против рынка, купон и срок" },
+  // ---- ниже: скрыто по умолчанию, включается через «☰ Колонки」 ----
+  { key: "secid",    title: "Тикер",          type: "s", off: true },
+  { key: "emitent",  title: "Эмитент",        type: "s", off: true, limited: true },
+  { key: "group",    title: "Тип",            type: "s", off: true },
+  { key: "price",    title: "Цена",           type: "n", d: 3, off: true, hint: "Цена за 100 номинала, без НКД" },
+  { key: "ytm_taxed",title: "YTM после налога", type: "n", d: 2, off: true,
+    val: (b) => effYtm(b),
+    hint: "Чистая доходность после НДФЛ (13% или 15% — как выбрано в фильтре). Бумаги со сроком от 3 лет — без налога (льгота владения)" },
+  { key: "coupon_pct", title: "Купон %",      type: "n", d: 2, off: true, hint: "Текущая купонная ставка, % годовых" },
+  { key: "coupon_kind", title: "Купон",       type: "s", off: true, hint: "Как выплачивается доход: фикс / плав / нулевой" },
+  { key: "duration", title: "Дюрация",        type: "n", d: 2, off: true, hint: "Чувствительность цены к ставке: на сколько % упадёт цена при росте ставки на 1 п.п." },
+  { key: "years",    title: "Срок, лет",      type: "n", d: 2, off: true, hint: "Остаточный срок до погашения, лет" },
+  { key: "liq",      title: "Ликв",           type: "n", d: 0, off: true, hint: "Ликвидность 0–100: чем больше оборот и сделок, тем выше" },
+  { key: "turnover", title: "Оборот, млн ₽",  type: "n", d: 1, off: true, val: (b) => (b.turnover || 0) / 1e6, hint: "Оборот за последний закрытый торговый день, млн ₽" },
+  { key: "spread_ofz", title: "Спред ОФЗ",    type: "n", d: 2, off: true, hint: "На сколько п.п. доходность выше кривой ОФЗ на тот же срок — премия за кредитный риск" },
+  { key: "matdate",  title: "Погашение",      type: "s", off: true, render: renderDate },
+];
+
+function sortValue(b, col) {
+  if (col.val) return col.val(b);
+  return b[col.key];
+}
+
+function apply() {
+  state.filtered = state.bonds.filter(matches);
+  const { key, dir } = state.sort;
+  const col = COLUMNS.find((c) => c.key === key);
+  if (col) {
+    state.filtered.sort((a, b) => {
+      const va = sortValue(a, col), vb = sortValue(b, col);
+      const na = va === null || va === undefined, nb = vb === null || vb === undefined;
+      if (na && nb) return 0;
+      if (na) return 1;   // пустые -- в конец независимо от направления
+      if (nb) return -1;
+      if (col.type === "n") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), "ru") * dir;
+    });
+  }
+  const pages = Math.max(1, Math.ceil(state.filtered.length / state.pageSize));
+  if (state.page > pages) state.page = pages;
+  renderStats();
+  renderTable();
+  // календарь и портфель показывают текущую выборку — обновляем вместе с ней
+  if (state.view === "cal") renderCal();
+  else if (state.view === "pf") renderPf();
+}
+
+function renderStats() {
+  const rows = state.filtered;
+  // медиана считается по той же доходности, что показывается в таблице
+  // (с учётом НДФЛ, если включён фильтр «чистая доходность»)
+  const ys = rows.map(effYtm).filter((v) => v !== null && v !== undefined)
+                 .sort((a, b) => a - b);
+  const med = ys.length ? ys[Math.floor(ys.length / 2)] : null;
+  const turn = rows.reduce((s, b) => s + (b.turnover || 0), 0) / 1e6;
+  const traded = rows.filter((b) => b.traded_today).length;
+  const cards = [
+    ["Найдено", fmtInt(rows.length)],
+    [state.f.netTax ? "Медианная чистая YTM" : "Медианная YTM", med === null ? "—" : fmt(med) + "%"],
+    ["Торговались сегодня", fmtInt(traded)],
+    ["Оборот, млн ₽", fmtInt(turn)],
+  ];
+  $("stats").innerHTML = cards.map(([l, v]) =>
+    '<div class="stat"><div class="v">' + v + '</div><div class="l">' + l + "</div></div>").join("");
+}
+
+/* ------------------------------------------------------------------ */
+/* Таблица                                                             */
+/* ------------------------------------------------------------------ */
+
+function renderTable() {
+  const head = $("thead-row");
+  head.innerHTML = "";
+  const cols = visibleCols();
+  for (const col of cols) {
+    const th = document.createElement("th");
+    th.textContent = col.title;
+    if (col.hint) th.title = col.hint;
+    if (col.left) th.classList.add("l");
+    if (col.hideSm) th.classList.add("sm-hide");
+    if (state.sort.key === col.key) {
+      th.classList.add("sorted");
+      th.textContent += state.sort.dir === 1 ? " ▲" : " ▼";
+    }
+    th.addEventListener("click", () => {
+      if (state.sort.key === col.key) state.sort.dir *= -1;
+      else state.sort = { key: col.key, dir: col.type === "n" ? -1 : 1 };
+      apply();
+    });
+    head.appendChild(th);
+  }
+
+  const start = (state.page - 1) * state.pageSize;
+  const page = state.filtered.slice(start, start + state.pageSize);
+  const tbody = $("tbody");
+  tbody.innerHTML = "";
+  $("empty").style.display = state.filtered.length ? "none" : "block";
+
+  for (const b of page) {
+    const tr = document.createElement("tr");
+    tr.classList.add(isGov(b.type_key) ? "row-ofz" : "row-corp");
+    tr.addEventListener("click", () => openDrawer(b));
+    for (const col of cols) {
+      const td = document.createElement("td");
+      if (col.left) td.classList.add("l");
+      if (col.limited) td.classList.add("limited");
+      if (col.hideSm) td.classList.add("sm-hide");
+      let v = sortValue(b, col);
+      if (col.render) {
+        const out = col.render(v, b);
+        if (col.html) {
+          td.innerHTML = out || "—";
+          if (col.key === "why") td.classList.add("why");
+        } else {
+          td.textContent = out === null || out === undefined || out === "" ? "—" : out;
+          if (col.key === "coupon_kind") td.title = couponLabel(v);
+        }
+      } else if (col.type === "n") {
+        td.textContent = v === null || v === undefined ? "—" : fmt(v, col.d);
+        const cls = col.cls && v !== null && v !== undefined ? col.cls(v) : "";
+        if (cls) td.classList.add(cls);
+      } else if (col.key === "group") {
+        const dot = GROUP_COLORS[b.type_key] || "var(--other)";
+        td.innerHTML = '<span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
+          dot + ';margin-right:6px"></span>' + esc(v || "—");
+      } else {
+        td.textContent = v === null || v === undefined || v === "" ? "—" : v;
+        if (col.key === "coupon_kind") td.title = couponLabel(v);
+      }
+      if (b.anomaly && col.key === "ytm") td.classList.add("neg");
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  const pages = Math.max(1, Math.ceil(state.filtered.length / state.pageSize));
+  const pager = $("pager");
+  if (pages <= 1) { pager.innerHTML = ""; return; }
+  pager.innerHTML = "";
+  const prev = document.createElement("button");
+  prev.textContent = "← Назад"; prev.disabled = state.page <= 1;
+  prev.addEventListener("click", () => { state.page--; renderTable(); });
+  const info = document.createElement("span");
+  info.textContent = "стр. " + state.page + " / " + pages + " · " + state.filtered.length + " бумаг";
+  const next = document.createElement("button");
+  next.textContent = "Вперёд →"; next.disabled = state.page >= pages;
+  next.addEventListener("click", () => { state.page++; renderTable(); });
+  pager.append(prev, info, next);
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+/* ------------------------------------------------------------------ */
+/* Графики (canvas, без библиотек)                                     */
+/* ------------------------------------------------------------------ */
+
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const h = Number(canvas.getAttribute("height"));
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.height = h + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+function axisTicks(min, max, count = 6) {
+  const span = max - min;
+  if (span <= 0) return [min];
+  const raw = span / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || 10 * mag;
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Карточка бумаги (drawer)                                            */
+/* ------------------------------------------------------------------ */
+
+async function openDrawer(b) {
+  const mask = $("drawer-mask"), dr = $("drawer");
+  mask.classList.add("open");
+  dr.classList.add("open");
+  const body = $("drawer-body");
+  body.innerHTML = '<div class="muted">Загрузка карточки…</div>';
+
+  let extra = {}, history = [];
+  try {
+    const r = await fetch("/api/bond/" + encodeURIComponent(b.secid) + "?days=180");
+    if (r.ok) {
+      const d = await r.json();
+      extra = d.extra || {}; history = d.history || [];
+    }
+  } catch (e) { /* карточка без деталей */ }
+
+  const kv = [
+    ["ISIN", b.isin],
+    ["Эмитент", b.emitent || extra.issuer],
+    ["ИНН", b.inn],
+    ["Группа", b.group],
+    ["Доска", b.board],
+    ["Валюта", ccyLabel(b.currency)],
+    ["Цена (чистая)", fmt(b.price, 3)],
+    ["НКД", fmt(b.accrued, 2)],
+    ["Цена полная", fmt(b.full_price, 3)],
+    ["YTM", b.ytm !== null ? fmt(b.ytm) + "%" : null],
+    ["YTM после НДФЛ 13%", b.ytm_taxed !== null ? fmt(b.ytm_taxed) + "%" : null],
+    ["YTM после НДФЛ 15%", b.ytm_taxed15 !== null ? fmt(b.ytm_taxed15) + "%" : null],
+    ["YTM до оферты", b.ytm_to_offer !== null ? fmt(b.ytm_to_offer) + "%" : null],
+    ["Текущая доходность", b.current_yield !== null ? fmt(b.current_yield) + "%" : null],
+    ["Остаточный срок", b.years !== null ? fmt(b.years) + " г" : null],
+    ["Дюрация", b.duration !== null ? fmt(b.duration) + " г" : null],
+    ["Доходность кривой ОФЗ на срок", b.ofz_curve !== null ? fmt(b.ofz_curve) + "%" : null],
+    ["Спред к ОФЗ", b.spread_ofz !== null ? fmt(b.spread_ofz) + " п.п." : null],
+    ["Купон", b.coupon_pct !== null ? fmt(b.coupon_pct) + "%" : null],
+    ["Тип купона", couponLabel(b.coupon_kind)],
+    ["База купона", b.coupon_base
+        ? b.coupon_base + (b.coupon_spread !== null && b.coupon_spread !== undefined
+            ? " (спред +" + fmt(b.coupon_spread, 1) + " п.п.)" : "")
+        : null],
+    ["Выплат в год", b.coupon_per_year],
+    ["Следующий купон", renderDate(b.next_coupon)],
+    ["Погашение", renderDate(b.matdate)],
+    ["Оферта (ближ.)", renderDate(b.offerdate)],
+    ["PUT (инвестор)", b.offer ? renderDate(b.offer.PUTOPTIONDATE) : null],
+    ["CALL (эмитент)", b.offer ? renderDate(b.offer.CALLOPTIONDATE) : null],
+    ["Номинал", fmtInt(b.face)],
+    ["Лот", (b.lotsize || 1) + " шт · " + fmtInt(b.lot_value || b.face || 1000) + " ₽"],
+    ["Выпуск, шт.", fmtInt(b.issue_size)],
+    ["Оборот за день", (b.turnover || 0) > 0 ? fmtInt(b.turnover) + " ₽" : null],
+    ["Сделок", fmtInt(b.trades)],
+    ["Ликвидность (0–100)", b.liq],
+    ["Сложность (0–7)", b.complexity],
+    ["Квал-инвесторы", b.qualified === "1" ? "только квалифицированные" :
+                       b.qualified === "0" ? "доступно всем" :
+                       extra.qualified === "1" ? "только квалифицированные" :
+                       extra.qualified === "0" ? "доступно всем" : null],
+    ["Дефолты", extra.has_default === "1" ? "есть" : extra.has_default === "0" ? "нет" : null],
+    ["Тех. дефолт", extra.tech_default === "1" ? "да" : null],
+    ["Досрочный выкуп", extra.early_repayment === "1" ? "возможен" : null],
+    ["Дата размещения", extra.issue_date],
+    ["Статус торгов", b.status],
+  ];
+
+  const rows = kv.filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => '<div class="k">' + k + "</div><div>" + esc(v) + "</div>").join("");
+
+  const flags = (b.flags || []).map((f) => '<span class="flag">' + esc(f) + "</span>").join("");
+  const inPf = state.pf.indexOf(b.secid) >= 0;
+  const pfCta = '<button class="pf-cta' + (inPf ? " in" : "") + '" data-s="' + esc(b.secid) + '">' +
+    (inPf ? "✓ В портфеле — убрать" : "＋ Добавить в конструктор портфеля") + "</button>";
+  const links =
+    '<a class="ext" target="_blank" rel="noopener" href="https://www.moex.com/ru/issue.aspx?code=' +
+    encodeURIComponent(b.secid) + '">MOEX ›</a> &nbsp; ' +
+    '<a class="ext" target="_blank" rel="noopener" href="https://www.bonds.ru/Security.aspx?secid=' +
+    encodeURIComponent(b.secid) + '">Bonds.ru ›</a>';
+
+  body.innerHTML =
+    "<h2>" + esc(b.secid) + "</h2>" +
+    '<div class="muted">' + esc(b.name || "") + (b.full && b.full !== b.name ? " · " + esc(b.full) : "") + "</div>" +
+    (b.anomaly ? '<div class="flag" style="margin-top:8px;background:#3a2020;border-color:#5c3030;color:#f5b8b8">аномальная доходность — вероятно, нет сделок или бумага у погашения</div>' : "") +
+    (flags ? '<div class="flags">' + flags + "</div>" : "") +
+    pfCta +
+    '<div class="kv">' + rows + "</div>" +
+    '<div style="margin:6px 0 14px">' + links + "</div>" +
+    '<div class="card"><h2>История цены и доходности (180 дней)</h2><canvas id="hist" height="190"></canvas></div>';
+
+  drawHistory(history);
+}
+
+function drawHistory(history) {
+  const canvas = document.getElementById("hist");
+  if (!canvas) return;
+  const { ctx, w, h } = setupCanvas(canvas);
+  const pad = { l: 44, r: 44, t: 10, b: 24 };
+  ctx.clearRect(0, 0, w, h);
+  const pts = (history || []).filter((p) => p.price != null);
+  if (pts.length < 2) {
+    ctx.fillStyle = "#8792a6"; ctx.font = "13px sans-serif";
+    ctx.fillText("Нет истории торгов за период", pad.l, h / 2);
+    return;
+  }
+  const prices = pts.map((p) => Number(p.price));
+  const yields = pts.map((p) => Number(p.yield)).filter((v) => !Number.isNaN(v));
+  const pMin = Math.min(...prices), pMax = Math.max(...prices);
+  const yMin = yields.length ? Math.min(...yields) : 0;
+  const yMax = yields.length ? Math.max(...yields) : 1;
+  const X = (i) => pad.l + i / (pts.length - 1) * (w - pad.l - pad.r);
+  const Yp = (v) => h - pad.b - (v - pMin) / ((pMax - pMin) || 1) * (h - pad.t - pad.b);
+  const Yy = (v) => h - pad.b - (v - yMin) / ((yMax - yMin) || 1) * (h - pad.t - pad.b);
+
+  ctx.strokeStyle = "#1e2534"; ctx.fillStyle = "#8792a6"; ctx.font = "11px sans-serif";
+  ctx.textAlign = "right";
+  for (const v of axisTicks(pMin, pMax, 4)) {
+    ctx.beginPath(); ctx.moveTo(pad.l, Yp(v)); ctx.lineTo(w - pad.r, Yp(v)); ctx.stroke();
+    ctx.fillText(v.toFixed(1), pad.l - 6, Yp(v) + 4);
+  }
+  if (yields.length) {
+    ctx.textAlign = "left";
+    for (const v of axisTicks(yMin, yMax, 4)) ctx.fillText(v.toFixed(1) + "%", w - pad.r + 6, Yy(v) + 4);
+    ctx.strokeStyle = "#26a69a"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      if (p.yield == null) return;
+      const fn = i === 0 ? "moveTo" : "lineTo";
+      ctx[fn](X(i), Yy(Number(p.yield)));
+    });
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#4f8cff"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  pts.forEach((p, i) => (i === 0 ? ctx.moveTo : ctx.lineTo).call(ctx, X(i), Yp(Number(p.price))));
+  ctx.stroke();
+  ctx.fillStyle = "#4f8cff"; ctx.textAlign = "left";
+  ctx.fillText("цена", pad.l + 6, pad.t + 12);
+  if (yields.length) { ctx.fillStyle = "#26a69a"; ctx.fillText("доходность", pad.l + 46, pad.t + 12); }
+  ctx.fillStyle = "#8792a6"; ctx.textAlign = "left";
+  ctx.fillText(pts[0].date, pad.l, h - 8);
+  ctx.textAlign = "right";
+  ctx.fillText(pts[pts.length - 1].date, w - pad.r, h - 8);
+}
+
+function closeDrawer() {
+  $("drawer-mask").classList.remove("open");
+  $("drawer").classList.remove("open");
+}
+
+/* ------------------------------------------------------------------ */
+/* CSV-экспорт (отфильтрованные строки)                                */
+/* ------------------------------------------------------------------ */
+
+function exportCsv() {
+  const cols = [
+    ["secid", "Тикер"], ["isin", "ISIN"], ["name", "Название"], ["emitent", "Эмитент"],
+    ["group", "Тип"], ["currency", "Валюта"], ["price", "Цена"], ["full_price", "Цена полная"],
+    ["ytm", "YTM %"], ["ytm_taxed", "YTM после НДФЛ %"], ["current_yield", "Тек. доходность %"],
+    ["duration", "Дюрация лет"], ["years", "Срок лет"], ["matdate", "Погашение"],
+    ["coupon_pct", "Купон %"], ["coupon_kind", "Тип купона"], ["coupon_per_year", "Выплат в год"],
+    ["next_coupon", "След. купон"], ["liq", "Ликвидность 0-100"], ["turnover", "Оборот ₽"],
+    ["trades", "Сделок"], ["spread_ofz", "Спред к ОФЗ п.п."], ["issue_size", "Выпуск шт."],
+    ["complexity", "Сложность 0-7"], ["status", "Статус"],
+  ];
+  const q = (v) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [cols.map((c) => q(c[1])).join(";")];
+  for (const b of state.filtered) lines.push(cols.map((c) => q(b[c[0]])).join(";"));
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "bonds_" + new Date().toISOString().slice(0, 10) + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ------------------------------------------------------------------ */
+/* Блок 3: конструктор портфеля — календарь выплат                     */
+/* ------------------------------------------------------------------ */
+
+const PF_KEY = "bondScreener.pf";
+const PFDAY_KEY = "bondScreener.pfDay";
+const PFBUDGET_KEY = "bondScreener.pfBudget";
+const PFLOTS_KEY = "bondScreener.pfLots";
+const MONTHS = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"];
+const MONTHS_GEN = ["январе", "феврале", "марте", "апреле", "мае", "июне",
+                    "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"];
+// родительный падеж — «22 октября», «5 декабря»
+const MONTHS_GEN2 = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                     "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+
+function loadPf() {
+  try {
+    const a = JSON.parse(localStorage.getItem(PF_KEY));
+    if (Array.isArray(a)) state.pf = a.filter((s) => typeof s === "string");
+  } catch (e) { /* ignore */ }
+  try {
+    const v = parseInt(localStorage.getItem(PFDAY_KEY), 10);
+    if (v >= 1 && v <= 31) state.pfDay = v;
+  } catch (e) { /* ignore */ }
+  try {
+    const v = parseFloat(localStorage.getItem(PFBUDGET_KEY));
+    if (isFinite(v) && v > 0) state.pfBudget = v;
+  } catch (e) { /* ignore */ }
+  try {
+    const o = JSON.parse(localStorage.getItem(PFLOTS_KEY));
+    if (o && typeof o === "object" && !Array.isArray(o)) {
+      for (const k in o) if (o[k] > 0) state.pfLots[k] = Math.min(999, Math.round(o[k]));
+    }
+  } catch (e) { /* ignore */ }
+  const dayEl = $("pf-day");
+  if (dayEl && state.pfDay) dayEl.value = state.pfDay;
+  const budEl = $("pf-budget");
+  if (budEl && state.pfBudget) budEl.value = state.pfBudget;
+}
+function savePf()    { try { localStorage.setItem(PF_KEY, JSON.stringify(state.pf)); } catch (e) {} }
+function savePfDay() { try {
+  if (state.pfDay) localStorage.setItem(PFDAY_KEY, String(state.pfDay));
+  else localStorage.removeItem(PFDAY_KEY);
+} catch (e) {} }
+function savePfBudget() { try {
+  if (state.pfBudget) localStorage.setItem(PFBUDGET_KEY, String(state.pfBudget));
+  else localStorage.removeItem(PFBUDGET_KEY);
+} catch (e) {} }
+function savePfLots() { try { localStorage.setItem(PFLOTS_KEY, JSON.stringify(state.pfLots)); } catch (e) {} }
+
+/* Сколько лотов бумаги куплено в портфеле: автосборка нормирует лоты,
+   ручное добавление через «+» — всегда один лот */
+function lotsOf(secid) {
+  const n = state.pfLots[secid];
+  return n > 0 ? n : 1;
+}
+
+function togglePf(secid) {
+  const i = state.pf.indexOf(secid);
+  if (i >= 0) state.pf.splice(i, 1); else state.pf.push(secid);
+  savePf();
+  renderPfUi();
+  renderTable(); // перерисовать «+»/«✓» в строках
+}
+
+function renderPfUi() {
+  const el = $("pf-count");
+  if (state.pf.length) { el.hidden = false; el.textContent = state.pf.length; }
+  else el.hidden = true;
+  if (state.view === "pf") renderPf();
+}
+
+const VIEW_KEY = "bondScreener.view.v1";
+
+/* Три экрана — «Таблица», «Календарь», «Портфель»: показывается один,
+   активная вкладка подсвечивается. Последний экран запоминается, чтобы
+   при возврате открылось там же, где закрыли (как в мобильных приложениях
+   с нижней навигацией). Без аргумента — восстановить сохранённый экран. */
+function setView(v) {
+  if (v === undefined) {
+    try { v = localStorage.getItem(VIEW_KEY) || null; } catch (e) { v = null; }
+  }
+  if (v !== "cal" && v !== "pf") v = "table";
+  state.view = v;
+  try { localStorage.setItem(VIEW_KEY, v); } catch (e) { /* ignore */ }
+
+  $("view-table").hidden = v !== "table";
+  $("pf-panel").hidden = v !== "pf";
+  $("cal-panel").hidden = v !== "cal";
+  document.querySelectorAll("#tabs .tab").forEach((t) =>
+    t.classList.toggle("on", t.dataset.view === v));
+
+  // экран, который открываем, рисуем заново — он мог измениться в фоне
+  if (v === "pf") renderPf();
+  else if (v === "cal") renderCal();
+
+  // новый экран начинаем смотреть с его верхней части
+  const mn = document.querySelector("main");
+  if (mn) mn.scrollTop = 0;
+  const ly = document.querySelector(".layout");
+  if (ly) ly.scrollTop = 0;
+}
+
+/* --- купонный график бумаги (считаем на клиенте из полей снапшота) --- */
+function parseISO(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ""));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+function addMonths(dt, n) {
+  const d = new Date(dt.getTime());
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + n);
+  d.setDate(Math.min(day, daysInMonth(d.getFullYear(), d.getMonth())));
+  return d;
+}
+function couponSchedule(b, fromMs, toMs) {
+  if (!b.next_coupon || !b.coupon_per_year || b.coupon_per_year <= 0) return [];
+  if (b.coupon_kind === "нулевой") return [];
+  const start = parseISO(b.next_coupon);
+  if (!start) return [];
+  const cpy = b.coupon_per_year;
+  const step = Math.max(1, Math.round(12 / cpy));          // шаг в месяцах (целые даты)
+  const face = b.face || 1000;
+  const amount = b.coupon_pct ? (face * b.coupon_pct / 100 / cpy) : 0;
+  const mat = parseISO(b.matdate);
+  const out = [];
+  let d = start, guard = 0;
+  while (d.getTime() <= toMs && guard++ < 120) {
+    if (d.getTime() >= fromMs && (!mat || d.getTime() <= mat.getTime())) {
+      out.push({ date: new Date(d.getTime()), amount: amount, float: b.coupon_kind === "плав" });
+    }
+    d = addMonths(d, step);
+    if (mat && d.getTime() > mat.getTime() + 31 * 86400000) break;
+  }
+  return out;
+}
+
+/* --- 12-месячная сетка выплат --- */
+function buildCalendar() {
+  const now = new Date();
+  const fromMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const gridStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const toMs = new Date(now.getFullYear(), now.getMonth() + 12, 1, 23, 59, 59).getTime();
+  const months = [], idx = {};
+  for (let i = 0; i < 12; i++) {
+    const dt = new Date(gridStart.getFullYear(), gridStart.getMonth() + i, 1);
+    const key = dt.getFullYear() + "-" + dt.getMonth();
+    idx[key] = i;
+    months.push({ y: dt.getFullYear(), mo: dt.getMonth(), key: key,
+                  label: MONTHS[dt.getMonth()], pays: [], total: 0 });
+  }
+  const bonds = state.pf.map((s) => state.bonds.find((b) => b.secid === s)).filter(Boolean);
+  for (const b of bonds) {
+    const mult = lotsOf(b.secid);   // лотов куплено (автосборка нормирует)
+    for (const p of couponSchedule(b, fromMs, toMs)) {
+      const i = idx[p.date.getFullYear() + "-" + p.date.getMonth()];
+      if (i === undefined) continue;
+      const amount = p.amount * mult;
+      months[i].pays.push({ secid: b.secid, name: b.name || b.secid,
+                            day: p.date.getDate(), amount: amount, float: p.float });
+      months[i].total += amount;
+    }
+  }
+  return { months, bonds, fromMs, toMs };
+}
+
+function renderPf() {
+  const { months, bonds, fromMs, toMs } = buildCalendar();
+  const total = months.reduce((s, m) => s + m.total, 0);
+  $("pf-total").innerHTML = bonds.length
+    ? "Бумаг: <b>" + bonds.length + "</b> · выплат за 12 мес ≈ <b>" + fmtInt(total) + " ₽</b>"
+    : "";
+  renderPfChange(bonds);
+
+  const grid = $("pf-months");
+  grid.innerHTML = "";
+  const gaps = [];
+  for (const mo of months) {
+    const div = document.createElement("div");
+    div.className = "month" + (mo.pays.length ? " haspay" : " gap");
+    let html = '<div class="m-name">' + mo.label + "</div>";
+    if (mo.pays.length) {
+      html += '<div class="m-sum">' + fmtInt(mo.total) + " ₽</div>";
+      const sorted = mo.pays.slice().sort((a, b) => a.day - b.day);
+      const show = sorted.slice(0, 5);
+      html += '<div class="m-pays">';
+      for (const p of show) {
+        const hit = state.pfDay && p.day === state.pfDay;
+        html += '<div class="m-pay' + (hit ? " hit" : "") + '" title="' + esc(p.name) +
+                " — " + p.day + "-е, " + fmtInt(p.amount) + (p.float ? ", плав." : "") +
+                ' ₽"><span class="d">' + p.day + "</span> " + esc(p.name) + (p.float ? "≈" : "") + "</div>";
+      }
+      html += "</div>";
+      if (sorted.length > show.length) html += '<div class="m-more">+' + (sorted.length - show.length) + " ещё</div>";
+    } else {
+      html += '<div class="m-empty">нет выплат</div>';
+      gaps.push(mo);
+    }
+    div.innerHTML = html;
+    grid.appendChild(div);
+  }
+  renderAdvice(gaps, bonds.length, fromMs, toMs);
+  renderPfList(bonds);
+}
+
+/* «Сдача»: сколько лотов выбранных бумаг влезает в бюджет и сколько
+   остаётся неизрасходованным. Бумаги покупаются лотами (обычно 1 шт.),
+   поэтому при фиксированном бюджете всегда остаётся остаток. Показываем
+   его честно — что делать с сдачой, решает сам пользователь. */
+function renderPfChange(bonds) {
+  const box = $("pf-change");
+  if (!box) return;
+  if (!state.pfBudget || !bonds.length) { box.innerHTML = ""; return; }
+
+  // стоимость одного лота с НКД: цена за 100 номинала -> деньги + НКД за лот
+  const items = bonds.map((b) => {
+    const inLot = b.lotsize || 1;
+    const lotNominal = b.lot_value || b.face || 1000;
+    const lotCost = (lotNominal * (b.price || 0) / 100) + (b.accrued || 0) * inLot;
+    return { b: b, inLot: inLot, n: lotsOf(b.secid), cost: Math.round(lotCost) };
+  }).filter((i) => i.cost > 0);
+
+  if (!items.length) { box.innerHTML = ""; return; }
+
+  const budget = state.pfBudget;
+  const auto = items.some((i) => i.n > 1);   // лоты нормировал автосбор?
+  const totalOneSet = items.reduce((s, i) => s + i.cost, 0);
+  const invested = items.reduce((s, i) => s + i.cost * i.n, 0);
+  const change = budget - invested;
+
+  let html = '<div class="pf-advice" style="background:rgba(79,140,255,.08);border-color:rgba(79,140,255,.4);color:#9dbcff">' +
+    "<b>Бюджет " + fmtInt(budget) + " ₽</b> · ";
+  if (auto) {
+    // автосборка: лоты подобраны под цель, показываем вложено/сдача
+    html += "вложено по лотам <b>" + fmtInt(invested) + " ₽</b><br>" +
+      (change >= 0
+        ? "Сдача: <b>" + fmtInt(change) + " ₽</b>" + (change > 0 ? " — на эту сумму целый лот уже не купить." : ".")
+        : "⚠ Бюджет превышен на <b>" + fmtInt(-change) + " ₽</b> — уберите лот или бумагу.");
+  } else {
+    // ручной портфель: сколько «наборов» по лоту каждой бумаги влезает
+    const sets = Math.floor(budget / totalOneSet);
+    html += "один лот каждой бумаги — <b>" + fmtInt(totalOneSet) + " ₽</b><br>";
+    if (sets === 0) {
+      html += "⚠ На бюджет не хватает даже на один лот каждой бумаги — не хватает " +
+              fmtInt(totalOneSet - budget) + " ₽.";
+    } else {
+      html += "Помещается <b>" + sets + "</b> " + (sets === 1 ? "набор" : sets < 5 ? "набора" : "наборов") +
+              " (по лоту каждой бумаги) на сумму " + fmtInt(sets * totalOneSet) + " ₽.<br>" +
+              "Сдача: <b>" + fmtInt(budget - sets * totalOneSet) + " ₽</b>" +
+              " — на эту сумму целый лот уже не купить.";
+    }
+  }
+  html += "</div>";
+
+  // подробная разбивка по бумагам — в той же разметке, что и строки календаря
+  html += '<div style="margin-top:8px">';
+  for (const it of items) {
+    const b = it.b;
+    html += '<div class="cal-row">' +
+      '<div class="cal-rname">' + esc(b.name || b.secid) +
+        '<span class="sub">' + (b.emitent ? esc(b.emitent) : "") +
+        " · " + it.inLot + " шт/лот" +
+        (it.n > 1 ? " · куплено " + it.n + " " + pluralLots(it.n) : "") +
+        (b.coupon_kind === "плав" ? " · плав. купон" : "") + "</span></div>" +
+      '<div class="cal-rmeta">' +
+        '<span class="cm amt"><i>' + fmtInt(it.cost) + " ₽</i>лот с НКД</span>" +
+        (it.n > 1 ? '<span class="cm"><i>' + fmtInt(it.cost * it.n) + " ₽</i>" + it.n + " " + pluralLots(it.n) + "</span>" : "") +
+        '<span class="cm"><i>' + fmt(b.price, 2) + "</i>цена</span>" +
+        '<span class="cm"><i>' + fmt(b.ytm, 1) + "%</i>YTM</span>" +
+        '<span class="cm matur"><i>' + shortDate(b.matdate) + "</i>погашение</span>" +
+      "</div></div>";
+  }
+  html += "</div>";
+  box.innerHTML = html;
+}
+
+/* ==================================================================== */
+/* Автосборка портфеля под бюджет и цель                                */
+/* ==================================================================== */
+/* Подбирает 3–6 бумаг из ОТФИЛЬТРОВАННОЙ выборки (фильтры блока 1
+   работают как ограничения), затем нормирует лоты, чтобы календарь
+   выплат получился максимально ровным и без пустых месяцев.
+
+   Как считаем:
+     1) кандидаты -- бумаги без амортизации с живым купоном, нормальной
+        доходностью, реальной торговлей и лотом в пределах бюджета;
+     2) жадный набор: на каждом шаге добавляем бумагу, которая сильнее
+        улучшает цель (закрывает дыры / выравнивает суммы);
+     3) локальный поиск: +/- лоты и замены бумаг, пока цель растёт.
+
+   Цели: even  -- ровный купонный доход каждый месяц (по умолчанию);
+         yield -- максимум ожидаемого годового дохода;
+         safe  -- «ровно», но только госбумаги (ОФЗ/субфед/муниц.).      */
+
+function pluralLots(n) {
+  return n === 1 ? "лот" : (n >= 2 && n <= 4) ? "лота" : "лотов";
+}
+
+/* стоимость покупки одного лота с НКД, ₽ */
+function pfLotCost(b) {
+  const inLot = b.lotsize || 1;
+  const lotNominal = b.lot_value || b.face || 1000;
+  return Math.round(lotNominal * (b.price || 0) / 100 + (b.accrued || 0) * inLot);
+}
+
+/* оценка набора бумаг: score -- «качество» под цель, плюс цифры для отчёта.
+   daySet -- рабочий Set для цели «выплаты каждый день»: сколько разных дней
+   года закрыто выплатами (лоты дат не добавляют -- только сумму). */
+function pfEval(picked, budget, goal, daySet) {
+  const daily = goal === "daily";
+  const nv = new Array(12).fill(0);
+  const grp = {};
+  let invested = 0, ret = 0;
+  if (daily && daySet) daySet.clear();
+  for (const c of picked) {
+    if (!c.n) continue;
+    invested += c.n * c.cost;
+    ret += c.n * c.cost * (c.b.ytm || 0) / 100;   // ожидаемый годовой доход
+    for (let m = 0; m < 12; m++) nv[m] += c.n * c.sched[m];
+    if (daily && daySet) for (const d of c.days) daySet.add(d);
+    const e = grp[c.grp] || (grp[c.grp] = { cnt: 0, sum: 0 });
+    e.cnt++; e.sum += c.n * c.cost;
+  }
+  const income = nv.reduce((s, v) => s + v, 0);
+  const gaps = nv.filter((v) => v <= 0).length;    // пустые месяцы
+  const mean = income / 12;
+  const sd = Math.sqrt(nv.reduce((s, v) => s + (v - mean) * (v - mean), 0) / 12);
+  const cv = mean > 0 ? sd / mean : 1;             // неровность: 0 = идеально
+  const days = daily && daySet ? daySet.size : 0;  // дней года с выплатами
+  let score;
+  // доход нормируем на бюджет: иначе при большой сумме он «перетаптывает»
+  // ровность и покрытие дней, и качество цели зависело бы от бюджета
+  const retOnBudget = ret / Math.max(1, budget);
+  const incOnBudget = income / Math.max(1, budget);
+  if (goal === "yield") score = ret - gaps * 3000;            // доход, но без дыр
+  else if (daily) score = days * 100 + incOnBudget * 30;      // покрытие дней, потом доход
+  else score = -gaps * 1000 - cv * 100 + retOnBudget * 30;    // ровность важнее дохода
+  return { score: score, nv: nv, invested: invested, ret: ret, grp: grp,
+           income: income, gaps: gaps, cv: cv, days: days };
+}
+
+/* ключ эмитента для лимита концентрации. Пара «ИНН + нормализованное
+   название»: у части выпусков ИНН в выгрузке нет, тогда срабатывает
+   название -- иначе один эмитент проходил бы лимит под разными масками */
+function pfGrpKey(b) {
+  return {
+    inn: b.inn || null,
+    em: String(b.emitent || b.name || b.secid)
+          .toLowerCase().replace(/[^a-zа-я0-9]/gi, "")
+  };
+}
+
+/* те же ли это эмитенты: совпадает ИНН либо нормализованное название */
+function pfSameGrp(a, b) {
+  return (a.inn && b.inn && a.inn === b.inn) ||
+         (a.em && b.em && a.em === b.em);
+}
+
+/* вклад эмитента в портфель (skip -- объект бумаги, которую не считаем) */
+function pfGrpOf(picked, grp, skip) {
+  let cnt = 0, sum = 0;
+  for (const c of picked) {
+    if (c === skip || !c.n) continue;
+    if (pfSameGrp(c.grp, grp)) { cnt++; sum += c.n * c.cost; }
+  }
+  return { cnt: cnt, sum: sum };
+}
+
+function autoAssemble() {
+  const goal = $("pf-goal").value;
+  let budget = state.pfBudget;
+  if (!budget || budget <= 0) {
+    budget = 50000;                       // разумный старт, как в примере
+    state.pfBudget = budget;
+    $("pf-budget").value = budget;
+    savePfBudget();
+  }
+  const report = $("pf-auto-report");
+  // «стресс-коридор»: доходность уровня дефолтных ожиданий не берём --
+  // цель «ровный доход» про стабильность, а не про лотерею
+  const med = state.medianYtm || 15;
+  const ytmCap = goal === "yield" ? Math.max(50, med * 4) : Math.max(30, med * 2.5);
+  // «выплаты каждый день»: одна бумага платит всегда в одно и то же число
+  // месяца, поэтому покрытие максимума дней требует десятков бумаг
+  const maxBonds = goal === "daily" ? 30 : 6;
+  const now = new Date();
+  const fromMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const toMs = new Date(now.getFullYear(), now.getMonth() + 12, 1, 23, 59, 59).getTime();
+  const idx = {};
+  for (let i = 0; i < 12; i++) {
+    const dt = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    idx[dt.getFullYear() + "-" + dt.getMonth()] = i;
+  }
+
+  // --- 1. кандидаты: текущая выборка + требования автосборки -----------
+  const govOnly = goal === "safe";
+  const cands = [];
+  for (const b of state.filtered) {
+    if (b.amortized) continue;                        // амортизация ломает ровность
+    if (govOnly && !isGov(b.type_key)) continue;
+    if (!b.next_coupon || !b.coupon_per_year || b.coupon_kind === "нулевой") continue;
+    if (b.ytm === null || b.ytm === undefined || b.anomaly) continue;
+    if ((b.ytm || 0) <= 0) continue;                   // с минусовой доходностью деньги теряются
+    if ((b.ytm || 0) > ytmCap) continue;               // стресс-бумага, рынок ждёт дефолта
+    if (!b.price || b.price <= 0) continue;
+    if (!b.traded_today && !(b.liq > 0)) continue;    // нулевая ликвидность
+    const cost = pfLotCost(b);
+    if (!cost || cost > budget) continue;             // хотя бы один лот не влезает
+    // график на окно сетки: вектор выплат по месяцам + дни с выплатами
+    const pays = couponSchedule(b, fromMs, toMs);
+    if (!pays.length) continue;                       // в окне не платит вовсе
+    const sched = new Array(12).fill(0);
+    const days = new Set();
+    for (const p of pays) {
+      days.add(Math.floor((p.date.getTime() - fromMs) / 86400000));
+      const mi = idx[p.date.getFullYear() + "-" + p.date.getMonth()];
+      if (mi !== undefined) sched[mi] += p.amount;
+    }
+    if (!sched.some((v) => v > 0)) continue;
+    cands.push({ b: b, cost: cost, sched: sched, days: [...days], grp: pfGrpKey(b), n: 0 });
+  }
+  if (!cands.length) {
+    report.innerHTML = '<div class="pf-advice" style="border-color:var(--red);color:#f2a2a0">' +
+      "🤖 Под текущими фильтрами не нашлось бумаг с живым купоном в пределах бюджета — " +
+      "расширьте выборку (фильтры блока 1) или увеличьте бюджет.</div>";
+    return;
+  }
+  cands.sort((a, c) => (c.b.ytm || 0) - (a.b.ytm || 0));
+  const pool = cands.slice(0, 800);   // быстрее искать, «хвост» почти не влияет
+  const swapPool = goal === "daily" ? pool.slice(0, 400) : pool;  // замены дорогие при 30 бумагах
+
+  // --- 2. жадный набор бумаг (3–6, для ежедневных выплат -- до 30) -----
+  const picked = [];
+  const daySet = new Set();   // рабочий сет дней для цели «выплаты каждый день»
+  let best = pfEval(picked, budget, goal, daySet);
+  while (picked.length < maxBonds) {
+    let step = null;
+    for (const c of pool) {
+      if (c.n) continue;                                  // уже выбрана
+      if (best.invested + c.cost > budget) continue;      // не влезает
+      // лимиты концентрации: не больше 2 бумаг одного эмитента (госбумаги
+      // вне лимита -- их заёмщик -- государство) и не больше 40% бюджета
+      const g = pfGrpOf(picked, c.grp, null);
+      if (g.cnt >= (isGov(c.b.type_key) ? 6 : 2)) continue;
+      if (g.sum + c.cost > budget * 0.4) continue;
+      c.n = 1;
+      const ev = pfEval(picked.concat(c), budget, goal, daySet);
+      c.n = 0;
+      if (!step || ev.score > step.ev.score) step = { c: c, ev: ev };
+    }
+    if (!step) break;
+    // после трёх бумаг добавляем дальше, только если цель реально лучше
+    // или бюджет влож меньше чем наполовину -- разнообразие окупится
+    // при пропорциональном масштабировании лотов (см. 3c)
+    if (picked.length >= 3 && step.ev.score <= best.score && best.invested >= budget * 0.5) break;
+    step.c.n = 1;
+    picked.push(step.c);
+    best = step.ev;
+    if (best.invested >= budget) break;
+  }
+
+  // --- 3. локальный поиск: количество лотов и замены бумаг --------------
+  for (let round = 0; round < (goal === "daily" ? 6 : 12) && picked.length; round++) {
+    let improved = false;
+    // 3a. +/- лот
+    for (const c of picked) {
+      // вклад эмитента без этой бумаги -- на него наложим лимит 40% бюджета
+      const ex = pfGrpOf(picked, c.grp, c);
+      const shareCap = Math.floor((budget * 0.4 - ex.sum) / c.cost);
+      for (const d of [-1, 1]) {
+        const n = c.n + d;
+        if (n < 1 || best.invested + d * c.cost > budget) continue;
+        if (n > shareCap) continue;
+        c.n = n;
+        const ev = pfEval(picked, budget, goal, daySet);
+        c.n = n - d;
+        if (ev.score > best.score) { c.n = n; best = ev; improved = true; }
+      }
+      // прыжок до максимума влезающих лотов (иначе растём по +1 слишком долго)
+      const free = budget - (best.invested - c.n * c.cost);
+      const maxN = Math.min(Math.floor(free / c.cost), Math.max(1, shareCap));
+      if (maxN > c.n) {
+        const keep = c.n;
+        c.n = Math.min(maxN, keep + 20);
+        const ev = pfEval(picked, budget, goal, daySet);
+        c.n = keep;
+        if (ev.score > best.score) { c.n = Math.min(maxN, keep + 20); best = ev; improved = true; }
+      }
+    }
+    // 3b. замена одной бумаги на другую из пула
+    for (let i = 0; i < picked.length; i++) {
+      const old = picked[i];
+      for (const c of swapPool) {
+        if (c.n) continue;
+        if (best.invested - old.n * old.cost + c.cost > budget) continue;
+        // лимиты концентрации нового эмитента (без бумаги, которую меняем)
+        const g = pfGrpOf(picked, c.grp, old);
+        if (g.cnt >= (isGov(c.b.type_key) ? 6 : 2)) continue;
+        if (g.sum + c.cost > budget * 0.4) continue;
+        picked[i] = c; c.n = 1;
+        const ev = pfEval(picked, budget, goal, daySet);
+        c.n = 0; picked[i] = old;
+        if (ev.score > best.score) { c.n = 1; picked[i] = c; best = ev; improved = true; break; }
+      }
+    }
+    // 3c. пропорциональный довыбор лотов: пока бюджет не израсходован,
+    // добавляем лоты во все бумаги поровну -- покрытие месяцев и дней
+    // от этого не меняется, а доход растёт. Без этого «сдача» росла бы
+    // вместе с бюджетом.
+    const perSet = picked.reduce((s, c) => s + c.cost, 0);
+    if (perSet > 0) {
+      const cur = picked.reduce((s, c) => s + c.n * c.cost, 0);
+      const sets = Math.floor((budget - cur) / perSet);
+      if (sets > 0) {
+        for (const c of picked) c.n += sets;
+        best = pfEval(picked, budget, goal, daySet);
+        improved = true;
+      }
+      // остаток докидываем по одному лоту туда, где он улучшает цель
+      for (let k = 0; k < 80; k++) {
+        let step = null;
+        for (const c of picked) {
+          if (best.invested + c.cost > budget) continue;
+          const ex = pfGrpOf(picked, c.grp, c);
+          if (ex.sum + (c.n + 1) * c.cost > budget * 0.4) continue;
+          c.n++;
+          const ev = pfEval(picked, budget, goal, daySet);
+          c.n--;
+          if (!step || ev.score > step.ev.score) step = { c: c, ev: ev };
+        }
+        if (!step || step.ev.score <= best.score) break;
+        step.c.n++;
+        best = step.ev;
+        improved = true;
+      }
+    }
+    if (!improved) break;
+  }
+
+  // --- 4. применяем результат ------------------------------------------
+  picked.sort((a, c) => (a.b.name || a.b.secid).localeCompare(c.b.name || c.b.secid, "ru"));
+  state.pf = picked.map((c) => c.b.secid);
+  state.pfLots = {};
+  for (const c of picked) state.pfLots[c.b.secid] = c.n;
+  savePf(); savePfLots();
+  renderPf();
+
+  // --- отчёт ------------------------------------------------------------
+  const goalLabel = { even: "ровный купонный доход", yield: "максимум доходности",
+                      safe: "только госбумаги", daily: "выплаты каждый день" }[goal] || "";
+  const change = Math.max(0, budget - best.invested);
+  report.innerHTML = '<div class="pf-advice" style="background:rgba(38,166,154,.1);border-color:rgba(38,166,154,.45);color:#8fd8d0">' +
+    "🤖 <b>Автосборка</b> · цель: " + goalLabel + " — " + picked.length + " " +
+      ["бумага", "бумаги", "бумаг"][picked.length === 1 ? 0 : picked.length <= 4 ? 1 : 2] +
+    " · вложено <b>" + fmtInt(best.invested) + " ₽</b> · сдача <b>" + fmtInt(change) + " ₽</b><br>" +
+    "Выплат за 12 мес ≈ <b>" + fmtInt(best.income) + " ₽</b>" +
+    (goal === "daily"
+      ? " · выплаты приходят в <b>" + best.days + " днях</b> из ~365 " +
+        "(одна бумага платит в одно число месяца — полное покрытие каждого дня требует ~30 бумаг с разными датами)"
+      : best.gaps
+        ? " · <b>пустых месяцев: " + best.gaps + "</b> — подсказка ниже предлагает бумаги в эти дыры"
+        : " · <b>все 12 месяцев закрыты</b>") +
+    (goal === "yield" || goal === "daily" ? "" : " · неровность " + fmt(best.cv * 100, 0) + "%") +
+    "</div>";
+}
+
+/* Подсказка о просадках + рекомендации бумаг, закрывающих пустые месяцы */
+function renderAdvice(gaps, pfCount, fromMs, toMs) {
+  const box = $("pf-advice");
+  if (!pfCount) {
+    box.innerHTML = '<div class="pf-empty">Конструктор пуст. Откройте бумагу в таблице (или нажмите «+» рядом с названием) ' +
+      "и добавьте её в портфель — здесь появится календарь выплат по месяцам.</div>";
+    return;
+  }
+  if (!gaps.length) {
+    box.innerHTML = '<div class="pf-advice" style="background:rgba(38,166,154,.1);border-color:rgba(38,166,154,.45);color:#7fd8cd">' +
+      "✓ Выплаты есть в каждом месяце — ровный пассивный доход без просадок.</div>";
+    return;
+  }
+  const gapKeys = new Set(gaps.map((g) => g.key));
+  const words = gaps.map((g) => MONTHS_GEN[g.mo]);
+  const phrase = words.length === 1 ? words[0]
+    : words.slice(0, -1).join(", ") + " и " + words[words.length - 1];
+
+  const pool = state.filtered.length ? state.filtered : state.bonds;
+  const cands = [];
+  for (const b of pool) {
+    if (state.pf.indexOf(b.secid) >= 0 || b.anomaly) continue;
+    const hits = couponSchedule(b, fromMs, toMs)
+      .filter((p) => gapKeys.has(p.date.getFullYear() + "-" + p.date.getMonth()));
+    if (hits.length) cands.push({ b: b, n: hits.length });
+    if (cands.length >= 60) break;
+  }
+  cands.sort((x, y) => (y.n - x.n) || ((y.b.turnover || 0) - (x.b.turnover || 0)));
+  const top = cands.slice(0, 3);
+
+  let html = '<div class="pf-advice">Просадка по купонам в <b>' + esc(phrase) + "</b>.";
+  if (top.length) {
+    html += " Рекомендуем добавить: ";
+    html += top.map((c) => '<button class="pf-rec" data-s="' + esc(c.b.secid) +
+      '" title="Добавить в портфель: ' + esc(c.b.emitent || c.b.name || c.b.secid) + '">＋ ' +
+      esc(c.b.name || c.b.secid) + "</button>").join(" ");
+  } else {
+    html += " добавьте бумагу с выплатами в этот месяц.";
+  }
+  html += "</div>";
+  box.innerHTML = html;
+}
+
+function renderPfList(bonds) {
+  const box = $("pf-list");
+  if (!bonds.length) { box.innerHTML = ""; return; }
+  box.innerHTML = bonds.map((b) =>
+    '<span class="pf-item">' + esc(b.name || b.secid) +
+    ' <button data-s="' + esc(b.secid) + '" title="Убрать из портфеля">✕</button></span>').join("");
+}
+
+/* ------------------------------------------------------------------ */
+/* Календарь купонов — по тем бумагам, что пользователь уже отфильтровал */
+/* ------------------------------------------------------------------ */
+
+const CAL_DOW = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const MONTHS_FULL = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+                     "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+function dateKey(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+         "-" + String(d.getDate()).padStart(2, "0");
+}
+
+/* "2031-03-04" -> "04.03.31" */
+function shortDate(iso) {
+  const d = parseISO(iso);
+  if (!d) return "—";
+  return String(d.getDate()).padStart(2, "0") + "." +
+         String(d.getMonth() + 1).padStart(2, "0") + "." +
+         String(d.getFullYear()).slice(2);
+}
+
+function renderCal() {
+  const y = state.calMonth.getFullYear();
+  const mo = state.calMonth.getMonth();
+  $("cal-title").textContent = MONTHS_FULL[mo] + " " + y;
+  $("cal-dow").innerHTML = CAL_DOW.map((d) => "<span>" + d + "</span>").join("");
+
+  const monthStart = new Date(y, mo, 1).getTime();
+  const monthEnd = new Date(y, mo + 1, 0, 23, 59, 59).getTime();
+  const today = dateKey(new Date());
+
+  // --- выплаты по дням месяца: берём текущую выборку пользователя ---
+  // Если фильтры не заданы, state.filtered == state.bonds, т.е. весь рынок.
+  const pool = state.filtered;
+  const byDay = {};
+  let total = 0;
+  let matched = 0;          // бумаг, подходящих под фильтр типа купона
+  const want = state.calCoupon;
+  const seen = new Set();
+  for (const b of pool) {
+    // фильтр типа купона: «Все» / «Фиксированный» / «Плавающий»
+    if (want === "fix" && b.coupon_kind === "плав") continue;
+    if (want === "float" && b.coupon_kind !== "плав") continue;
+    seen.add(b.secid);
+    // Суммы нормируем к номиналу 1000 ₽. У бумаг разный face (1000, 100 000, …),
+    // и без нормировки день с 53 выплатами «стоил» 1,4 млн ₽, а соседний с 57 —
+    // 728 ₽. На условных 1000 ₽ суммы становятся сопоставимыми.
+    const cpy = b.coupon_per_year || 1;
+    const norm = b.coupon_pct ? (1000 * b.coupon_pct / 100 / cpy) : 0;
+    for (const p of couponSchedule(b, monthStart, monthEnd)) {
+      const k = dateKey(p.date);
+      (byDay[k] = byDay[k] || []).push({ b: b, amount: norm, float: p.float });
+      total += norm;
+    }
+  }
+  matched = seen.size;
+  const payDays = Object.keys(byDay).length;
+
+  $("cal-total").innerHTML = pool.length
+    ? (want ? "Под фильтр: <b>" + matched + "</b> из " + pool.length : "Бумаг в выборке: <b>" + pool.length + "</b>") +
+      " · дней с выплатами: <b>" + payDays +
+      "</b> · выплат ≈ <b>" + fmtInt(total) + " ₽</b>"
+    : "";
+
+  const isFiltered = state.filtered.length < state.bonds.length;
+  $("cal-hint").innerHTML = isFiltered
+    ? "Показаны бумаги из вашей текущей выборки (<b>" + state.filtered.length +
+      "</b> из " + state.bonds.length + ") — то, что осталось после фильтров в таблице."
+    : "Фильтры не заданы — показаны <b>все</b> (" + state.bonds.length +
+      ") бумаги, которые платят купоны.";
+
+  // переключатель типа купона + счётчик, сколько бумаг под фильтр подходит
+  document.querySelectorAll("#tg-calcpn .tg").forEach((el) => {
+    el.classList.toggle("on", (el.dataset.cpn || null) === state.calCoupon);
+  });
+  const cpnLabel = state.calCoupon === "fix" ? "фиксированный"
+                 : state.calCoupon === "float" ? "плавающий" : "";
+  $("cal-cpnhint").innerHTML = cpnLabel
+    ? "только <b>" + cpnLabel + "</b> — " + matched + " из " + pool.length + " бумаг"
+    : pool.length + " бумаг, выплаты за месяц ≈ " + fmtInt(total) + " ₽";
+
+  // --- сетка месяца ---
+  const nDays = daysInMonth(y, mo);
+  const lead = (new Date(y, mo, 1).getDay() + 6) % 7;   // Пн = 0
+  let html = "";
+  for (let i = 0; i < lead; i++) html += '<div class="cal-day out"></div>';
+  for (let day = 1; day <= nDays; day++) {
+    const k = y + "-" + String(mo + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+    const pays = byDay[k] || [];
+    const sum = pays.reduce((s, p) => s + p.amount, 0);
+    let lv = "";
+    if (pays.length) {
+      lv = pays.length <= 3 ? " lv1" : pays.length <= 10 ? " lv2"
+         : pays.length <= 25 ? " lv3" : " lv4";
+    }
+    const cls = "cal-day" + lv + (pays.length ? "" : " nopay") +
+                (k === today ? " today" : "") + (state.calDay === day ? " sel" : "");
+    html += '<div class="' + cls + '" data-day="' + day + '" title="' +
+      (pays.length ? day + " " + MONTHS_GEN2[mo] + ": " + pays.length + " выплат"
+                   : "в этот день выплат нет") + '">' +
+      '<div class="cal-dnum">' + day + "</div>";
+    html += pays.length
+      ? '<div class="cal-damt">' + fmtInt(sum) + " ₽</div>" +
+        '<div class="cal-dcnt">' + pays.length + " выплат</div>"
+      : '<div class="cal-dcnt">—</div>';
+    html += "</div>";
+  }
+  $("cal-grid").innerHTML = html;
+  renderCalDay(byDay, mo);
+}
+
+function renderCalDay(byDay, mo) {
+  const box = $("cal-day-box");
+  if (!state.calDay) { box.innerHTML = ""; return; }
+  const k = state.calMonth.getFullYear() + "-" + String(mo + 1).padStart(2, "0") +
+            "-" + String(state.calDay).padStart(2, "0");
+  const pays = (byDay[k] || []).slice().sort((a, b) => b.amount - a.amount);
+  if (!pays.length) {
+    box.innerHTML = '<div class="cal-list"><div class="pf-empty">В этот день выплат нет — ' +
+      "нажмите на подсвеченный день (они отмечены зелёным).</div></div>";
+    return;
+  }
+  const sum = pays.reduce((s, p) => s + p.amount, 0);
+  let html = '<div class="cal-list"><div class="cal-daysum"><b>' + state.calDay + " " +
+    MONTHS_GEN2[mo] + "</b> · " + pays.length + " выплат ≈ <b>" + fmtInt(sum) + " ₽</b>" +
+    " на условные 1000 ₽ в каждую бумагу</div>";
+  for (const p of pays) {
+    const b = p.b;
+    const inPf = state.pf.indexOf(b.secid) >= 0;
+    const ib = ISS_BADGE[b.type_key] || ["Прочее", "var(--other)"];
+    const freq = b.coupon_per_year ? fmt(b.coupon_per_year, 0) + " выпл./год" : "";
+    html += '<div class="cal-row">' +
+      '<div class="cal-rname">' + esc(b.name || b.secid) +
+        '<span class="sub">' + (b.emitent ? esc(b.emitent) : "") +
+        " · " + ib[0] + (freq ? " · " + freq : "") +
+        (p.float ? " · плав. купон" : "") + "</span></div>" +
+      '<div class="cal-rmeta">' +
+        '<span class="cm amt"><i>' + (p.amount ? "≈ " + fmtInt(p.amount) + " ₽" : "—") +
+          "</i>выплата</span>" +
+        '<span class="cm"><i>' + (b.coupon_pct ? fmt(b.coupon_pct, 2) + "%" : "—") +
+          "</i>купон</span>" +
+        '<span class="cm"><i>' + fmt(b.price, 2) + "</i>цена</span>" +
+        '<span class="cm"><i>' + fmt(b.ytm, 2) + "%</i>YTM</span>" +
+        '<span class="cm matur"><i>' + shortDate(b.matdate) + "</i>погашение</span>" +
+      "</div>" +
+      '<button class="pf-add' + (inPf ? " in" : "") + '" data-s="' + esc(b.secid) + '" ' +
+        'title="' + (inPf ? "Убрать из портфеля" : "Добавить в портфель") + '">' +
+        (inPf ? "✓" : "+") + "</button>" +
+      "</div>";
+  }
+  box.innerHTML = html + "</div>";
+}
+
+/* ------------------------------------------------------------------ */
+/* Старт                                                               */
+/* ------------------------------------------------------------------ */
+
+bindAll();
+state.cols = loadCols();
+renderColPanel();
+loadPf();
+renderPfUi();
+setView(); // открыть последний экран (по умолчанию — «Таблица»)
+loadPresets();
+loadData();
+</script>
+</body>
+</html>
