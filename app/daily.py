@@ -187,6 +187,15 @@ def build_snapshot(force: bool = False, preferred_date: str | None = None) -> di
     except Exception as err:  # noqa: BLE001
         errors.append(f"ключевая ставка ЦБ: {err}")
 
+    # 1.6 Реестр кредитных рейтингов Банка России (ratings.cbr.ru).
+    #     Обновляется не чаще раза в сутки; ошибки не критичны -- остаёмся
+    #     на кэше, фильтр и колонка продолжают работать.
+    try:
+        from . import ratings as _ratings
+        _ratings.refresh()
+    except Exception as err:  # noqa: BLE001
+        errors.append(f"рейтинги ЦБ: {err}")
+
     # 2. Итоги закрытого дня (оборот, сделки, цены, доходности).
     try:
         totals = fetch_day_totals(trade_date)

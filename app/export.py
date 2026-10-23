@@ -61,6 +61,16 @@ def export(no_build: bool = False, if_stale: bool = False) -> Path:
         raise SystemExit("снапшот пуст -- сначала выполните сборку")
 
     bonds = snap.get("bonds") or []
+
+    # Реестр рейтингов ЦБ: освежаем (не чаще раза в сутки) и пере-применяем
+    # к бумагам, чтобы публикация без пересборки снапшота (--if-stale) тоже
+    # несла актуальные рейтинги, а не те, что были в день сборки снапшота.
+    from . import ratings as _ratings
+    ext = _ratings.refresh()
+    if ext:
+        for b in bonds:
+            b.update(_ratings.resolve(b, ext))
+
     meta_src = dict(snap.get("meta") or {})
     meta = {
         "trade_date": snap.get("trade_date"),

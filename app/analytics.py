@@ -388,10 +388,11 @@ def build_bond(item: dict, catalog: dict, curve: list[dict],
     # валюта номинала -- по ней фильтруем (SUR/USD/EUR/CNY/CHF)
     ccy = sec.get("FACEUNIT") or sec.get("CURRENCYID") or "SUR"
 
-    # кредитный рейтинг эмитента: внешний реестр по ISIN -> вывод по типу
+    # кредитный рейтинг эмитента: внешний реестр ЦБ по ISIN/ИНН -> вывод по типу
     from . import ratings as _ratings
     rinfo = _ratings.resolve(
         {"isin": sec.get("ISIN") or cat.get("isin"),
+         "inn": cat.get("inn"),
          "type_key": group_key, "group": group},
         _external_ratings())
 
@@ -445,6 +446,8 @@ def build_bond(item: dict, catalog: dict, curve: list[dict],
         "rating": rinfo.get("rating"),
         "rating_band": rinfo.get("rating_band"),
         "rating_source": rinfo.get("rating_source"),
+        "rating_agency": rinfo.get("rating_agency"),
+        "rating_date": rinfo.get("rating_date"),
         "complexity": score,
         "flags": flags,
         "turnover": round(turnover, 0),
