@@ -194,6 +194,18 @@
     display: inline-block; padding: 1px 7px; border-radius: 999px;
     font-size: 11px; background: var(--panel2); border: 1px solid var(--border);
   }
+  /* Плашка кредитного рейтинга: цвет -- полоса надёжности, пунктир --
+     честная пометка «вывод по типу» (не рейтинг агентства). */
+  .rt {
+    display: inline-block; padding: 0 6px; border-radius: 4px;
+    font-size: 11px; font-weight: 700; line-height: 15px;
+  }
+  .rt-high   { background: rgba(38,166,154,.16); color: #5fd0c4; }
+  .rt-mid    { background: rgba(240,163,94,.16); color: var(--amber); }
+  .rt-low    { background: rgba(239,83,80,.16);  color: #ff8a80; }
+  .rt-inferred { background: transparent; border: 1px dashed var(--border);
+                 color: var(--muted); font-weight: 600; }
+  .rt-none   { color: var(--muted); font-weight: 400; }
   .liq-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); vertical-align: middle; }
   .pager { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 2px; color: var(--muted); font-size: 12px; flex: 0 0 auto; flex-wrap: wrap; }
   .pager button { padding: 1px 9px; font-size: 12px; }
@@ -793,7 +805,7 @@ const state = {
 /* ------------------------------------------------------------------ */
 /* Видимые колонки (настройка пользователя, хранится в localStorage)   */
 /* ------------------------------------------------------------------ */
-const COLS_KEY = "bondScreener.cols.v2";
+const COLS_KEY = "bondScreener.cols.v3"; // v3: добавлена колонка «Рейтинг» по умолчанию
 
 function defaultVisibleCols() {
   // по умолчанию скрываем колонки с флагом off:true
@@ -1463,6 +1475,53 @@ function renderTerm(v, b) {
     (renderDate(b.matdate) || "—") + "</span></div>";
 }
 
+/* «Рейтинг» -- реестр Банка России (ratings.cbr.ru), иначе честный вывод
+   по типу эмитента (только ОФЗ/субфед/муниц, помечен пунктиром).
+   Источник всегда виден в подсказке: цифру из воздуха не рисуем. */
+function renderRating(v, b) {
+  const r = b.rating;
+  if (!r) {
+    return '<span class="rt rt-none" title="В реестре Банка России рейтинга для этой бумаги (или её эмитента) нет, а вывод по типу возможен только для ОФЗ/субфед/муниц">—</span>';
+  }
+  const inferred = b.rating_source !== "external";
+  let cls = "rt ";
+  if (inferred) cls += "rt-inferred";
+  else if (b.rating_band === "high") cls += "rt-high";
+  else if (b.rating_band === "mid") cls += "rt-mid";
+  else if (b.rating_band === "low") cls += "rt-low";
+  else cls += "rt-none";
+  let hint;
+  if (inferred) {
+    const why = b.type_key === "ofz_bond" ? "ОФЗ (суверенная гарантия)"
+              : b.type_key === "subfederal_bond" ? "субъект РФ"
+              : b.type_key === "municipal_bond" ? "муниципалитет" : "тип эмитента";
+    hint = "Вывод по типу (" + why + " -> " + r + "), не рейтинг агентства. " +
+           "Рейтингового агентства из реестра Банка России для этой бумаги нет.";
+  } else {
+    hint = "Рейтинг из реестра Банка России (ratings.cbr.ru): " + r;
+    if (b.rating_agency) hint += " -- " + b.rating_agency;
+    if (b.rating_date) hint += " (на " + b.rating_date + ")";
+    if (b.rating_band === "high") hint += ". Полоса: A и выше";
+    else if (b.rating_band === "mid") hint += ". Полоса: BBB..B";
+    else if (b.rating_band === "low") hint += ". Полоса: ниже B";
+  }
+  return '<span class="' + cls + '" title="' + esc(hint) + '">' + esc(r) + "</span>";
+}
+
+/* Числовой балл для сортировки колонки рейтинга (null -> в конец). */
+function ratingRank(r) {
+  if (!r) return null;
+  const u = String(r).toUpperCase().replace(/\(RU\)/g, "");
+  const order = ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-",
+                 "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-",
+                 "B+", "B", "B-", "CCC", "CC", "C", "D"];
+  for (let i = 0; i < order.length; i++) {
+    const base = order[i];
+    if (u === base || u === "RU" + base || u.endsWith(base)) return order.length - i;
+  }
+  return null;
+}
+
 /* «Почему стоит купить?» -- набор шаблонов-триггеров.
    Порядок важен: от самого сильного аргумента к слабому. Первым делом
    отсекаем стрессовые бумаги -- раньше они получали хвалебный текст
@@ -1591,6 +1650,9 @@ const COLUMNS = [
     hint: "Остаточный срок до погашения и сама дата погашения. Если у бумаги есть оферта — показываем и её дату" },
   { key: "next_coupon", title: "След. купон", type: "s", render: renderDate,
     hint: "Ближайшая дата выплаты купона — когда на счёт придут очередные проценты" },
+  { key: "rating",  title: "Рейтинг",       type: "n", html: true,
+    val: (b) => ratingRank(b.rating), render: renderRating,
+    hint: "Кредитный рейтинг из реестра Банка России (ratings.cbr.ru): полоса A и выше — зелёная, BBB..B — жёлтая, ниже — красная. Если агентство не оценивало бумагу, для ОФЗ/субфед/муниц показываем вывод по типу (пунктир) — это оценка, а не рейтинг; иначе прочерк. Агентство и дата — в подсказке плашки" },
   { key: "why",      title: "Почему стоит купить?", type: "n", left: true, html: true,
     val: (b) => (b.ytm === null || b.ytm === undefined ? -1e9 : b.ytm), render: renderWhy,
     hint: "Короткий вывод по бумаге: надёжность, доходность против рынка, купон и срок" },
