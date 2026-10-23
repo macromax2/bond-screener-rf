@@ -322,6 +322,11 @@
                font-weight: 600; margin-left: 6px; }
   /* предупреждение об оферте в колонке «Срок» */
   .offer-warn { color: var(--amber) !important; font-weight: 600; margin-left: 6px; }
+  /* ⚠ в колонке «Доходность»: бумага с офертой — YTM может быть к оферте */
+  .offer-mark { color: var(--amber); font-weight: 700; margin-left: 3px; }
+  /* подсветка «виновного» фильтра при пустой выдаче (#empty показывает откат) */
+  .flt-bad { box-shadow: 0 0 0 2px var(--red) !important; border-radius: 8px; }
+  .kill-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0 4px; }
   .bdg-none  { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
 
   /* ячейки в одну строку: имя+бейджи слева направо, значение+подпись тоже */
@@ -619,8 +624,16 @@
         <div class="qk">
           <label class="ck" title="Номинал не гасится частями — возвращается одним платежом при погашении">
             <input type="checkbox" id="f-noamort"> Без амортизации</label>
-          <label class="ck" title="ОФЗ, субфедеральные и муниципальные бумаги — без кредитного риска корпоративов. Реальных рейтингов агентств (Эксперт РА, НКР, АКРА) скринер пока не собирает, поэтому фильтр по ним сделать нельзя">
+          <label class="ck" title="ОФЗ, субфедеральные и муниципальные бумаги — без кредитного риска корпоративов. Рейтинги берутся из реестра Банка России (ratings.cbr.ru); у корпоративов колонка «Рейтинг» показывает оценку агентства, если она есть">
             <input type="checkbox" id="f-highrating"> Только госбумаги <span class="muted">(ОФЗ/субфед/муниц.)</span></label>
+          <label class="ck" title="Убрать бумаги, у которых впереди оферта (PUT инвестора или CALL эмитента): у них доходность часто посчитана к дате оферты, а не к погашению — сравнение YTM с обычными бумагами некорректно">
+            <input type="checkbox" id="f-nooffer"> Без оферты</label>
+          <label class="ck" title="Показать только бумаги с рейтингом из реестра Банка России (агентство оценивало эмитент или выпуск). Без рейтинга остаются в основном мелкие биржевые займы">
+            <input type="checkbox" id="f-hasrating"> Только с рейтингом</label>
+          <label class="ck" title="Убрать бумаги с плавающим купоном: их доходность посчитана по текущему купону и изменится вслед за ключевой ставкой — сравнивать с фиксами «лоб в лоб» нельзя">
+            <input type="checkbox" id="f-nofloat"> Без флоатеров</label>
+          <label class="ck" title="Убрать бумаги, которыми торговались за день на сумму меньше миллиона: формально сделка была, но продать объём без большого спреда не получится">
+            <input type="checkbox" id="f-liq1m"> Оборот ≥ 1 млн ₽</label>
           <label class="ck" title="Убрать бумаги без сделок за последний закрытый день">
             <input type="checkbox" id="f-traded"> Торговались сегодня</label>
           <label class="ck" title="По умолчанию квал-бумаги скрыты: их не может купить обычный инвестор">
@@ -805,7 +818,7 @@ const state = {
 /* ------------------------------------------------------------------ */
 /* Видимые колонки (настройка пользователя, хранится в localStorage)   */
 /* ------------------------------------------------------------------ */
-const COLS_KEY = "bondScreener.cols.v3"; // v3: добавлена колонка «Рейтинг» по умолчанию
+const COLS_KEY = "bondScreener.cols.v4"; // v4: колонка «Оборот, млн ₽» по умолчанию видна
 
 function defaultVisibleCols() {
   // по умолчанию скрываем колонки с флагом off:true
@@ -865,6 +878,10 @@ function defaultFilters() {
     coupon: new Set(["fix", "float"]),  // тип купона
     noamort: false,      // только без амортизации
     highRating: false,   // только госбумаги (ОФЗ/субфед/муниц.)
+    noOffer: false,      // убрать бумаги с офертой (PUT/CALL): YTM может быть к оферте
+    hasRating: false,    // только бумаги с рейтингом из реестра ЦБ
+    noFloat: false,      // убрать флоатеров: их YTM посчитан по текущему купону
+    liq1m: false,        // оборот за день ≥ 1 млн ₽ — иначе объём не купить
     showQualified: false, // показать квал-бумаги (по умолчанию скрыты)
     // Срок до погашения: ползунок пишет yearsMax (null = «10+ / любой»),
     // yearsMin нужен пресетам (например «Долгие фикс» — от 5 лет)
@@ -1007,6 +1024,10 @@ function bindAll() {
   };
   bindQuick("f-noamort", "noamort");
   bindQuick("f-highrating", "highRating");
+  bindQuick("f-nooffer", "noOffer");
+  bindQuick("f-hasrating", "hasRating");
+  bindQuick("f-nofloat", "noFloat");
+  bindQuick("f-liq1m", "liq1m");
   bindQuick("f-qualified", "showQualified");
   bindQuick("f-traded", "traded");
   bindQuick("f-anom", "anomalies");
@@ -1238,6 +1259,10 @@ function syncToggles() {
   });
   $("f-noamort").checked = !!state.f.noamort;
   $("f-highrating").checked = !!state.f.highRating;
+  $("f-nooffer").checked = !!state.f.noOffer;
+  $("f-hasrating").checked = !!state.f.hasRating;
+  $("f-nofloat").checked = !!state.f.noFloat;
+  $("f-liq1m").checked = !!state.f.liq1m;
   $("f-nettax").checked = !!state.f.netTax;
   $("f-taxrate").disabled = !state.f.netTax;
   $("f-taxrate").value = String(state.f.taxRate || 0.13);
@@ -1328,8 +1353,8 @@ function applyPreset(p, chip) {
 /* Фильтрация / сортировка                                             */
 /* ------------------------------------------------------------------ */
 
-function matches(b) {
-  const f = state.f;
+function matches(b, f) {
+  f = f || state.f;
   if (!f.anomalies && b.anomaly) return false;
   if (f.search) {
     const hay = ((b.secid || "") + " " + (b.isin || "") + " " + (b.name || "") +
@@ -1349,9 +1374,19 @@ function matches(b) {
   }
   // Блок 1 — быстрые фильтры
   if (f.noamort && b.amortized) return false;
-  // «Только госбумаги»: фильтруем по типу эмитента, а не по рейтингу --
-  // реальных рейтингов агентств скринер не собирает (см. README)
+  // «Только госбумаги»: фильтруем по типу эмитента (у корпоративов
+  // рейтинг агентства есть не у всех -- см. колонку «Рейтинг»)
   if (f.highRating && !isGov(b.type_key)) return false;
+  // оферта: YTM у таких бумаг часто посчитан к дате оферты (YTP), а не
+  // к погашению -- сравнивать «лоб в лоб» с обычными бумагами нельзя
+  if (f.noOffer && b.offer && b.offer.nearest) return false;
+  // только с рейтингом реестра ЦБ (inferred-вывод по типу не считается)
+  if (f.hasRating && b.rating_source !== "external") return false;
+  // флоатеры: их YTM посчитан по текущему купону и изменится вслед за КС
+  if (f.noFloat && b.coupon_kind === "плав") return false;
+  // оборот за день: миллиардные суммы не нужны, но и «случайная сделка
+  // на 1000 ₽» не даёт купить объём без спреда
+  if (f.liq1m && !((b.turnover || 0) >= 1e6)) return false;
   // квал-бумаги по умолчанию скрыты: обычный инвестор их не может купить
   if (b.qualified_only && !f.showQualified) return false;
   if (f.currencies.size && !f.currencies.has(b.currency)) return false;
@@ -1473,6 +1508,36 @@ function renderTerm(v, b) {
     : "";
   return '<div class="cell-comb"><span>' + top + offSub + '</span><span class="sub">' +
     (renderDate(b.matdate) || "—") + "</span></div>";
+}
+
+/* «Доходность»: YTM + честные пометки. ⚠ оферта (YTM может быть посчитан
+   к дате оферты, а не к погашению; если биржа дала YTP — показываем обе
+   цифры), ≈ флоатер (доходность рассчитана по текущему купону и изменится
+   вслед за ключевой ставкой — сравнивать с фиксами «лоб в лоб» нельзя). */
+function renderYtm(v, b) {
+  if (v === null || v === undefined) return "—";
+  const main = fmt(v, 1) + "%";
+  const hints = [];
+  let body = esc(main);
+  if (b.coupon_kind === "плав") {
+    body = "≈" + body;
+    hints.push("Флоатер: доходность посчитана по текущему купону (база + спред). " +
+      "После изменения ключевой ставки купон и доходность изменятся — значение ориентировочное");
+  }
+  if (b.offer && b.offer.nearest) {
+    body = '<span class="offer-mark" title="' +
+      esc("Оферта " + renderDate(b.offer.nearest) +
+        ": эмитент может выкупить бумагу досрочно (CALL) или инвестор вернуть по номиналу (PUT) — реальный срок владения короче, а доходность к погашению может не реализоваться") +
+      '">⚠</span>' + body;
+    if (b.ytm_to_offer !== null && b.ytm_to_offer !== undefined) {
+      body += ' <span class="muted" title="' +
+        esc("Доходность к ближайшей оферте " + renderDate(b.offer.nearest) + " (YTP)") +
+        '">/ к оферте ' + esc(fmt(b.ytm_to_offer, 1)) + "%</span>";
+    }
+  }
+  const cls = v > 0 ? "pos" : v < 0 ? "neg" : "";
+  const title = hints.length ? ' title="' + esc(hints.join(". ")) + '"' : "";
+  return '<span class="' + cls + '"' + title + ">" + body + "</span>";
 }
 
 /* «Рейтинг» -- реестр Банка России (ratings.cbr.ru), иначе честный вывод
@@ -1638,10 +1703,9 @@ function effYtm(b) {
 const COLUMNS = [
   { key: "name",     title: "Бумага и тип",   type: "s", left: true, html: true, limited: true,
     val: (b) => b.name || b.secid, render: renderNameCell },
-  { key: "ytm",      title: "Доходность",     type: "n", d: 1,
-    val: (b) => effYtm(b),
-    hint: "Доходность к погашению (YTM): сколько % годовых вы получите, купив по текущей цене и держа до погашения. С включённым фильтром «чистая доходность» — после НДФЛ",
-    cls: (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "") },
+  { key: "ytm",      title: "Доходность",     type: "n", d: 1, html: true,
+    val: (b) => effYtm(b), render: renderYtm,
+    hint: "Доходность к погашению (YTM): сколько % годовых вы получите, купив по текущей цене и держа до погашения. С включённым фильтром «чистая доходность» — после НДФЛ. ⚠ — есть оферта: доходность может быть посчитана к ней (YTP), а не к погашению; ≈ — флоатер: значение по текущему купону и изменится вслед за ключевой ставкой" },
   { key: "cpn_freq", title: "Купон и частота", type: "n", html: true,
     val: (b) => b.coupon_pct, render: renderCpnFreq,
     hint: "Текущая купонная ставка и как часто приходят выплаты. У плавающих — плашка с базой привязки (ЦБ / RUONIA / ИПЦ)" },
@@ -1653,6 +1717,7 @@ const COLUMNS = [
   { key: "rating",  title: "Рейтинг",       type: "n", html: true,
     val: (b) => ratingRank(b.rating), render: renderRating,
     hint: "Кредитный рейтинг из реестра Банка России (ratings.cbr.ru): полоса A и выше — зелёная, BBB..B — жёлтая, ниже — красная. Если агентство не оценивало бумагу, для ОФЗ/субфед/муниц показываем вывод по типу (пунктир) — это оценка, а не рейтинг; иначе прочерк. Агентство и дата — в подсказке плашки" },
+  { key: "turnover", title: "Оборот, млн ₽",  type: "n", d: 1, hideSm: true, val: (b) => (b.turnover || 0) / 1e6, hint: "Оборот за последний закрытый торговый день, млн ₽. Сделка на 1000 ₽ формально есть, но объём без большого спреда не купить — смотрите эту колонку или фильтр «Оборот ≥ 1 млн ₽»" },
   { key: "why",      title: "Почему стоит купить?", type: "n", left: true, html: true,
     val: (b) => (b.ytm === null || b.ytm === undefined ? -1e9 : b.ytm), render: renderWhy,
     hint: "Короткий вывод по бумаге: надёжность, доходность против рынка, купон и срок" },
@@ -1669,7 +1734,6 @@ const COLUMNS = [
   { key: "duration", title: "Дюрация",        type: "n", d: 2, off: true, hint: "Чувствительность цены к ставке: на сколько % упадёт цена при росте ставки на 1 п.п." },
   { key: "years",    title: "Срок, лет",      type: "n", d: 2, off: true, hint: "Остаточный срок до погашения, лет" },
   { key: "liq",      title: "Ликв",           type: "n", d: 0, off: true, hint: "Ликвидность 0–100: чем больше оборот и сделок, тем выше" },
-  { key: "turnover", title: "Оборот, млн ₽",  type: "n", d: 1, off: true, val: (b) => (b.turnover || 0) / 1e6, hint: "Оборот за последний закрытый торговый день, млн ₽" },
   { key: "spread_ofz", title: "Спред ОФЗ",    type: "n", d: 2, off: true, hint: "На сколько п.п. доходность выше кривой ОФЗ на тот же срок — премия за кредитный риск" },
   { key: "matdate",  title: "Погашение",      type: "s", off: true, render: renderDate },
 ];
@@ -1690,8 +1754,9 @@ function updateFbCount() {
   if (setDiff(f.issuer, d.issuer)) n++;
   if (setDiff(f.coupon, d.coupon)) n++;
   if (setDiff(f.currencies, d.currencies)) n++;
-  for (const k of ["noamort", "highRating", "showQualified", "traded",
-                   "anomalies", "netTax", "taxfree"]) if (f[k] !== d[k]) n++;
+  for (const k of ["noamort", "highRating", "noOffer", "hasRating", "noFloat",
+                   "liq1m", "showQualified", "traded", "anomalies", "netTax", "taxfree"])
+    if (f[k] !== d[k]) n++;
   for (const k of ["yearsMin", "yearsMax", "ytmMin", "ytmMax", "priceMin",
                    "priceMax", "durMin", "durMax", "spreadMin", "spreadMax",
                    "liqMin", "turnoverMin", "complexityMax"])
@@ -1701,7 +1766,7 @@ function updateFbCount() {
 }
 
 function apply() {
-  state.filtered = state.bonds.filter(matches);
+  state.filtered = state.bonds.filter((b) => matches(b));
   updateFbCount();
   const { key, dir } = state.sort;
   const col = COLUMNS.find((c) => c.key === key);
@@ -1748,6 +1813,98 @@ function renderStats() {
 /* Таблица                                                             */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Пустая выдача: подсвечиваем «виновный» фильтр и даём кнопку отката.  */
+/* Идея: по одному возвращаем каждый настроенный фильтр к стандарту и   */
+/* считаем, сколько бумаг вернулось — снимать стоит только те, что дают */
+/* результат (остальные ни при чём).                                    */
+/* ------------------------------------------------------------------ */
+function diagnoseEmpty() {
+  const d = defaultFilters(), f = state.f;
+  const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+  const count = (over) => {
+    const g = Object.assign({}, f, over);
+    let n = 0;
+    for (const b of state.bonds) if (matches(b, g)) { n++; if (n > 5000) break; }
+    return n;
+  };
+  const culprits = [];
+  const test = (active, label, over, sel) => {
+    if (!active) return;
+    const n = count(over);
+    if (n > 0) culprits.push({ label: label, n: n, over: over, sel: sel });
+  };
+  test(!!f.search, "поиск «" + f.search + "»", { search: "" }, "#f-search");
+  test(!sameSet(f.issuer, d.issuer), "тип эмитента", { issuer: new Set(["ofz", "corp"]) }, "#tg-issuer");
+  test(!sameSet(f.coupon, d.coupon), "тип купона", { coupon: new Set(["fix", "float"]) }, "#tg-coupon");
+  test(!sameSet(f.currencies, d.currencies), "валюта", { currencies: new Set(d.currencies) }, "#tg-ccy");
+  test(f.noamort, "без амортизации", { noamort: false }, "#f-noamort");
+  test(f.highRating, "только госбумаги", { highRating: false }, "#f-highrating");
+  test(f.noOffer, "без оферты", { noOffer: false }, "#f-nooffer");
+  test(f.hasRating, "только с рейтингом", { hasRating: false }, "#f-hasrating");
+  test(f.noFloat, "без флоатеров", { noFloat: false }, "#f-nofloat");
+  test(f.liq1m, "оборот ≥ 1 млн ₽", { liq1m: false }, "#f-liq1m");
+  test(f.traded, "торговались сегодня", { traded: false }, "#f-traded");
+  test(!f.showQualified, "квал-бумаги скрыты", { showQualified: true }, "#f-qualified");
+  test(!f.anomalies, "аномальные YTM скрыты", { anomalies: true }, "#f-anom");
+  test(f.taxfree, "только налоговая льгота", { taxfree: false }, null);
+  if (f.yearsMin !== null && f.yearsMin !== undefined)
+    test(true, "срок от " + f.yearsMin + " " + pluralYears(f.yearsMin), { yearsMin: null }, "#f-term");
+  if (f.yearsMax !== null && f.yearsMax !== undefined)
+    test(true, "срок до " + f.yearsMax + " " + pluralYears(f.yearsMax), { yearsMax: null }, "#f-term");
+  test(f.ytmMin !== null && f.ytmMin !== undefined, "YTM ≥ " + f.ytmMin + "%", { ytmMin: null }, null);
+  test(f.ytmMax !== null && f.ytmMax !== undefined, "YTM ≤ " + f.ytmMax + "%", { ytmMax: null }, null);
+  test(f.priceMin !== null && f.priceMin !== undefined, "цена ≥ " + f.priceMin + " ₽", { priceMin: null }, null);
+  test(f.priceMax !== null && f.priceMax !== undefined, "цена ≤ " + f.priceMax + " ₽", { priceMax: null }, null);
+  test(f.durMin !== null && f.durMin !== undefined, "дюрация ≥ " + f.durMin, { durMin: null }, null);
+  test(f.durMax !== null && f.durMax !== undefined, "дюрация ≤ " + f.durMax, { durMax: null }, null);
+  test(f.spreadMin !== null && f.spreadMin !== undefined, "спред к ОФЗ ≥ " + f.spreadMin + " пп", { spreadMin: null }, null);
+  test(f.liqMin !== null && f.liqMin !== undefined, "ликвидность ≥ " + f.liqMin, { liqMin: null }, null);
+  test(f.turnoverMin !== null && f.turnoverMin !== undefined, "оборот ≥ " + f.turnoverMin + " млн ₽", { turnoverMin: null }, null);
+  test(f.complexityMax !== null && f.complexityMax !== undefined, "сложность ≤ " + f.complexityMax, { complexityMax: null }, null);
+  culprits.sort((a, b) => b.n - a.n);
+  return culprits.slice(0, 5);   // пятый десяток «виноватых» уже не читается
+}
+
+function renderEmpty() {
+  const box = $("empty");
+  box.style.display = "block";
+  document.querySelectorAll(".flt-bad").forEach((el) => el.classList.remove("flt-bad"));
+  const fixes = diagnoseEmpty();
+  state.emptyFixes = fixes;
+  let html = "Ничего не найдено — под фильтры не подходит ни одна из " +
+    fmtInt(state.bonds.length) + " бумаг.";
+  if (fixes.length) {
+    html += "<br>Фильтры, чьё снятие вернёт результат:<div class='kill-list'>";
+    fixes.forEach((c, i) => {
+      html += "<button class='ghost' data-fix='" + i + "'>↺ " + esc(c.label) +
+        " → " + fmtInt(c.n) + "</button>";
+    });
+    html += "</div><div class='hint'>Нажатие снимет только этот фильтр, остальные останутся.</div>";
+    for (const c of fixes) {
+      if (!c.sel) continue;
+      document.querySelectorAll(c.sel).forEach((el) => {
+        // чекбокс крохотный — подсвечиваем его подпись, ползунок — обёртку
+        const t = el.type === "checkbox" ? (el.closest("label") || el)
+                : (el.closest(".slider-wrap") || el);
+        t.classList.add("flt-bad");
+      });
+    }
+  } else {
+    html += "<br>Фильтры не снимаются по одному — попробуйте «↺ Сбросить».";
+  }
+  html += "<br><button class='ghost' id='empty-reset'>↺ Сбросить все фильтры</button>";
+  box.innerHTML = html;
+  box.querySelectorAll("[data-fix]").forEach((btn) => btn.addEventListener("click", () => {
+    const c = state.emptyFixes[Number(btn.dataset.fix)];
+    if (!c) return;
+    Object.assign(state.f, c.over);   // откат одного фильтра к стандарту
+    syncInputs(); clearPreset(); apply();
+  }));
+  const rb = $("empty-reset");
+  if (rb) rb.addEventListener("click", () => $("btn-reset").click());
+}
+
 function renderTable() {
   const head = $("thead-row");
   head.innerHTML = "";
@@ -1774,7 +1931,12 @@ function renderTable() {
   const page = state.filtered.slice(start, start + state.pageSize);
   const tbody = $("tbody");
   tbody.innerHTML = "";
-  $("empty").style.display = state.filtered.length ? "none" : "block";
+  if (state.filtered.length) {
+    $("empty").style.display = "none";
+    document.querySelectorAll(".flt-bad").forEach((el) => el.classList.remove("flt-bad"));
+  } else {
+    renderEmpty();   // подсветить «виновный» фильтр + кнопки отката
+  }
 
   for (const b of page) {
     const tr = document.createElement("tr");
@@ -2439,6 +2601,7 @@ function autoAssemble() {
   // --- 1. кандидаты: текущая выборка + требования автосборки -----------
   const govOnly = goal === "safe";
   const cands = [];
+  let skipRating = 0, skipFloat = 0;   // отсев по кредитному риску — покажем в отчёте
   for (const b of state.filtered) {
     if (b.amortized) continue;                        // амортизация ломает ровность
     if (govOnly && !isGov(b.type_key)) continue;
@@ -2446,6 +2609,17 @@ function autoAssemble() {
     if (b.ytm === null || b.ytm === undefined || b.anomaly) continue;
     if ((b.ytm || 0) <= 0) continue;                   // с минусовой доходностью деньги теряются
     if ((b.ytm || 0) > ytmCap) continue;               // стресс-бумага, рынок ждёт дефолта
+    // кредитный риск: дистресс (CCC и ниже) не берём никогда — «робот» не
+    // должен собирать преддефолтный портфель под видом доходной стратегии
+    if (b.rating_band === "low") { skipRating++; continue; }
+    if (goal === "yield") {
+      // цель «максимум доходности» заманчиво ловить ВДО: требуем реальный
+      // рейтинг агентства (реестр ЦБ), чтобы мусор без оценки не проходил
+      if (b.rating_source !== "external") { skipRating++; continue; }
+      // флоатер: YTM посчитан по текущему купону — «максимум» выцепит
+      // флоатеры с фиктивной доходностью после роста ставки
+      if (b.coupon_kind === "плав") { skipFloat++; continue; }
+    }
     if (!b.price || b.price <= 0) continue;
     if (!b.traded_today && !(b.liq > 0)) continue;    // нулевая ликвидность
     const cost = pfLotCost(b);
@@ -2593,6 +2767,21 @@ function autoAssemble() {
   const goalLabel = { even: "ровный купонный доход", yield: "максимум доходности",
                       safe: "только госбумаги", daily: "выплаты каждый день" }[goal] || "";
   const change = Math.max(0, budget - best.invested);
+  // рейтинговый состав собранного портфеля: чтобы «робот» не был чёрным ящиком
+  const rcount = {};
+  for (const c of picked) {
+    const r = c.b.rating || "без рейтинга";
+    rcount[r] = (rcount[r] || 0) + 1;
+  }
+  const rlist = Object.keys(rcount).sort((a, c) => rcount[c] - rcount[a])
+    .map((r) => esc(r) + " ×" + rcount[r]).join(", ");
+  let skipNote = "";
+  if (skipRating || skipFloat) {
+    skipNote = "<br>Отсев по рискам: " +
+      (skipRating ? "<b>" + skipRating + "</b> бумаг без рейтинга агентства или в дистрессе (ниже CCC) " : "") +
+      (skipFloat ? (skipRating ? "· " : "") + "<b>" + skipFloat + "</b> флоатеров (их доходность несравнима с фиксом) " : "") +
+      "— цель «" + goalLabel + "» их не берёт";
+  }
   report.innerHTML = '<div class="pf-advice" style="background:rgba(38,166,154,.1);border-color:rgba(38,166,154,.45);color:#8fd8d0">' +
     "🤖 <b>Автосборка</b> · цель: " + goalLabel + " — " + picked.length + " " +
       ["бумага", "бумаги", "бумаг"][picked.length === 1 ? 0 : picked.length <= 4 ? 1 : 2] +
@@ -2605,6 +2794,8 @@ function autoAssemble() {
         ? " · <b>пустых месяцев: " + best.gaps + "</b> — подсказка ниже предлагает бумаги в эти дыры"
         : " · <b>все 12 месяцев закрыты</b>") +
     (goal === "yield" || goal === "daily" ? "" : " · неровность " + fmt(best.cv * 100, 0) + "%") +
+    (rlist ? "<br>Рейтинги портфеля: " + rlist : "") +
+    skipNote +
     "</div>";
 }
 
