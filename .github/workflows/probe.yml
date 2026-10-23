@@ -1,0 +1,27 @@
+name: probe-ratings-sources
+# Одноразовая диагностика: какие источники рейтингов доступны с облачного IP.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Проверка источников
+        run: |
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
+          for u in \
+            "https://acra-ratings.ru/ratings/issuers/" \
+            "https://www.nkr.ru/ratings" \
+            "https://nationalratings.ru/ratings/" \
+            "https://raexpert.ru/ratings/corporate/" \
+            "https://www.cbonds.ru/ratings/" \
+            "https://ratings.cbr.ru/" \
+            "https://iss.moex.com/securities/SU26238RMFS6.json" ; do
+            code=$(curl -sL -o /dev/null -w "%{http_code}" --max-time 20 -A "$UA" "$u" || echo FAIL)
+            echo "$code  $u"
+          done
