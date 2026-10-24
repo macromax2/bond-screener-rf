@@ -692,11 +692,19 @@
           Бюджет <input type="number" id="pf-budget" min="0" step="100" placeholder="50000"> ₽
         </label>
         <select id="pf-goal" class="pf-goal"
-          title="Что оптимизирует автосборка: ровный купон каждый месяц, выплаты каждый день, максимальная доходность или только госбумаги (ОФЗ/субфед/муниц.)">
+          title="Что оптимизирует автосборка: ровный купон каждый месяц, выплаты каждый день, максимальная доходность, максимальный рейтинг (надёжность) или только госбумаги (ОФЗ/субфед/муниц.)">
           <option value="even">Цель: ровный доход</option>
           <option value="daily">Цель: выплаты каждый день</option>
           <option value="yield">Цель: максимум доходности</option>
+          <option value="rating">Цель: максимальный рейтинг</option>
           <option value="safe">Цель: только госбумаги</option>
+        </select>
+        <select id="pf-rating" class="pf-goal"
+          title="Жёсткий порог кредитного рейтинга для кандидатов (реестр ЦБ): отсекает бумаги ниже порога. Бумаги без рейтинга при включённом пороге не берутся. Сочетается с любой целью — например, «максимум доходности» + порог A− даёт высокодоходные, но надёжные бумаги">
+          <option value="any">Рейтинг: любой</option>
+          <option value="bbb">Рейтинг: не ниже BBB−</option>
+          <option value="a">Рейтинг: не ниже A−</option>
+          <option value="gov">Рейтинг: только госбумаги</option>
         </select>
         <button id="pf-auto" class="primary"
           title="Подобрать 3–6 бумаг под бюджет (для ежедневных выплат — до 30): только без амортизации, с живой торговлей; лоты нормируются, чтобы календарь получился максимально ровным. Работает по текущей выборке — ваши фильтры блока 1 действуют как ограничения">🤖 Автосборка</button>
@@ -2516,7 +2524,7 @@ function pfEval(picked, budget, goal, daySet) {
   const daily = goal === "daily";
   const nv = new Array(12).fill(0);
   const grp = {};
-  let invested = 0, ret = 0;
+  let invested = 0, ret = 0, rkSum = 0, rkW = 0;
   if (daily && daySet) daySet.clear();
   for (const c of picked) {
     if (!c.n) continue;
@@ -2526,6 +2534,10 @@ function pfEval(picked, budget, goal, daySet) {
     if (daily && daySet) for (const d of c.days) daySet.add(d);
     const e = grp[c.grp] || (grp[c.grp] = { cnt: 0, sum: 0 });
     e.cnt++; e.sum += c.n * c.cost;
+    // рейтинг, взвешенный вложенной суммой: чтобы «максимальный рейтинг»
+    // оптимизировал среднюю надёжность портфеля, а не просто наличие
+    const rk = ratingRank(c.b.rating);
+    if (rk !== null) { rkSum += rk * c.n * c.cost; rkW += c.n * c.cost; }
   }
   const income = nv.reduce((s, v) => s + v, 0);
   const gaps = nv.filter((v) => v <= 0).length;    // пустые месяцы
@@ -2533,16 +2545,18 @@ function pfEval(picked, budget, goal, daySet) {
   const sd = Math.sqrt(nv.reduce((s, v) => s + (v - mean) * (v - mean), 0) / 12);
   const cv = mean > 0 ? sd / mean : 1;             // неровность: 0 = идеально
   const days = daily && daySet ? daySet.size : 0;  // дней года с выплатами
+  const avgRank = rkW > 0 ? rkSum / rkW : 0;       // средний рейтинг (1..20)
   let score;
   // доход нормируем на бюджет: иначе при большой сумме он «перетаптывает»
   // ровность и покрытие дней, и качество цели зависело бы от бюджета
   const retOnBudget = ret / Math.max(1, budget);
   const incOnBudget = income / Math.max(1, budget);
   if (goal === "yield") score = ret - gaps * 3000;            // доход, но без дыр
+  else if (goal === "rating") score = avgRank * 200 - gaps * 1000 - cv * 100 + retOnBudget * 30; // надёжность важнее дохода
   else if (daily) score = days * 100 + incOnBudget * 30;      // покрытие дней, потом доход
   else score = -gaps * 1000 - cv * 100 + retOnBudget * 30;    // ровность важнее дохода
   return { score: score, nv: nv, invested: invested, ret: ret, grp: grp,
-           income: income, gaps: gaps, cv: cv, days: days };
+           income: income, gaps: gaps, cv: cv, days: days, avgRank: avgRank };
 }
 
 /* ключ эмитента для лимита концентрации. Пара «ИНН + нормализованное
@@ -2600,6 +2614,11 @@ function autoAssemble() {
 
   // --- 1. кандидаты: текущая выборка + требования автосборки -----------
   const govOnly = goal === "safe";
+  // жёсткий порог рейтинга (селект «Рейтинг: …»): BBB− → rank≥11, A− → rank≥14,
+  // «только госбумаги» → по типу эмитента. Бумаги без рейтинга отсекаются.
+  const ratingSel = $("pf-rating").value;
+  const minRank = ratingSel === "bbb" ? 11 : ratingSel === "a" ? 14 : null;
+  const govThresh = ratingSel === "gov";
   const cands = [];
   let skipRating = 0, skipFloat = 0;   // отсев по кредитному риску — покажем в отчёте
   for (const b of state.filtered) {
@@ -2612,6 +2631,18 @@ function autoAssemble() {
     // кредитный риск: дистресс (CCC и ниже) не берём никогда — «робот» не
     // должен собирать преддефолтный портфель под видом доходной стратегии
     if (b.rating_band === "low") { skipRating++; continue; }
+    // жёсткий порог рейтинга из селекта (любая цель)
+    if (govThresh && !isGov(b.type_key)) { skipRating++; continue; }
+    if (minRank !== null) {
+      const rk0 = ratingRank(b.rating);
+      if (rk0 === null || rk0 < minRank) { skipRating++; continue; }
+    }
+    if (goal === "rating") {
+      // цель «максимальный рейтинг»: ранжируем по надёжности — нужен рейтинг
+      // (внешний из реестра ЦБ или вывод по типу для госбумаг), иначе непонятно
+      // ставить такую бумагу в «максимально надёжный» портфель
+      if (ratingRank(b.rating) === null) { skipRating++; continue; }
+    }
     if (goal === "yield") {
       // цель «максимум доходности» заманчиво ловить ВДО: требуем реальный
       // рейтинг агентства (реестр ЦБ), чтобы мусор без оценки не проходил
@@ -2643,7 +2674,16 @@ function autoAssemble() {
       "расширьте выборку (фильтры блока 1) или увеличьте бюджет.</div>";
     return;
   }
-  cands.sort((a, c) => (c.b.ytm || 0) - (a.b.ytm || 0));
+  // для «максимального рейтинга» кандидаты идут по убыванию надёжности
+  // (внутри рейтинга — по доходности), иначе — по доходности
+  if (goal === "rating") {
+    cands.sort((a, c) => {
+      const ra = ratingRank(a.b.rating) || 0, rc = ratingRank(c.b.rating) || 0;
+      return (rc - ra) || ((c.b.ytm || 0) - (a.b.ytm || 0));
+    });
+  } else {
+    cands.sort((a, c) => (c.b.ytm || 0) - (a.b.ytm || 0));
+  }
   const pool = cands.slice(0, 800);   // быстрее искать, «хвост» почти не влияет
   const swapPool = goal === "daily" ? pool.slice(0, 400) : pool;  // замены дорогие при 30 бумагах
 
@@ -2765,7 +2805,10 @@ function autoAssemble() {
 
   // --- отчёт ------------------------------------------------------------
   const goalLabel = { even: "ровный купонный доход", yield: "максимум доходности",
-                      safe: "только госбумаги", daily: "выплаты каждый день" }[goal] || "";
+                      rating: "максимальный рейтинг", safe: "только госбумаги",
+                      daily: "выплаты каждый день" }[goal] || "";
+  // порог из селекта «Рейтинг: …» (если не «любой») — честно пишем в отчёт
+  const rtLabel = { bbb: "не ниже BBB−", a: "не ниже A−", gov: "только госбумаги" }[ratingSel];
   const change = Math.max(0, budget - best.invested);
   // рейтинговый состав собранного портфеля: чтобы «робот» не был чёрным ящиком
   const rcount = {};
@@ -2775,17 +2818,28 @@ function autoAssemble() {
   }
   const rlist = Object.keys(rcount).sort((a, c) => rcount[c] - rcount[a])
     .map((r) => esc(r) + " ×" + rcount[r]).join(", ");
+  // средний рейтинг портфеля (взвеш. по деньгам) → примерная ступень шкалы
+  const RORDER = ["AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-",
+                  "BB+", "BB", "BB-", "B+", "B", "B-", "CCC", "CC", "C", "D"];
+  let avgNote = "";
+  if (goal === "rating" && best.avgRank > 0) {
+    const i = 20 - Math.round(best.avgRank);
+    const lbl = (i >= 0 && i < RORDER.length) ? "ru" + RORDER[i] : "";
+    if (lbl) avgNote = " · средний рейтинг портфеля ≈ <b>" + lbl + "</b>";
+  }
   let skipNote = "";
   if (skipRating || skipFloat) {
     skipNote = "<br>Отсев по рискам: " +
-      (skipRating ? "<b>" + skipRating + "</b> бумаг без рейтинга агентства или в дистрессе (ниже CCC) " : "") +
+      (skipRating ? "<b>" + skipRating + "</b> бумаг без рейтинга, ниже порога или в дистрессе (ниже CCC) " : "") +
       (skipFloat ? (skipRating ? "· " : "") + "<b>" + skipFloat + "</b> флоатеров (их доходность несравнима с фиксом) " : "") +
-      "— цель «" + goalLabel + "» их не берёт";
+      "— не берём";
   }
   report.innerHTML = '<div class="pf-advice" style="background:rgba(38,166,154,.1);border-color:rgba(38,166,154,.45);color:#8fd8d0">' +
-    "🤖 <b>Автосборка</b> · цель: " + goalLabel + " — " + picked.length + " " +
+    "🤖 <b>Автосборка</b> · цель: " + goalLabel +
+      (rtLabel ? " · рейтинг <b>" + rtLabel + "</b>" : "") +
+      " — " + picked.length + " " +
       ["бумага", "бумаги", "бумаг"][picked.length === 1 ? 0 : picked.length <= 4 ? 1 : 2] +
-    " · вложено <b>" + fmtInt(best.invested) + " ₽</b> · сдача <b>" + fmtInt(change) + " ₽</b><br>" +
+    " · вложено <b>" + fmtInt(best.invested) + " ₽</b> · сдача <b>" + fmtInt(change) + " ₽</b>" + avgNote + "<br>" +
     "Выплат за 12 мес ≈ <b>" + fmtInt(best.income) + " ₽</b>" +
     (goal === "daily"
       ? " · выплаты приходят в <b>" + best.days + " днях</b> из ~365 " +
