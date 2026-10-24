@@ -370,6 +370,11 @@
   .pf-total { font-size: 13px; color: var(--text); }
   .pf-total b { color: var(--green); }
 
+  /* фильтры кандидатов автосборки — строка чекбоксов под шапкой портфеля */
+  .pf-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 10px; }
+  .pf-filters label.ck { padding: 5px 11px; font-size: 12px; }
+  .pf-filters label.ck input { accent-color: var(--accent); }
+
   .months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 7px; }
   .month {
     min-width: 0;
@@ -710,6 +715,18 @@
           title="Подобрать 3–6 бумаг под бюджет (для ежедневных выплат — до 30): только без амортизации, с живой торговлей; лоты нормируются, чтобы календарь получился максимально ровным. Работает по текущей выборке — ваши фильтры блока 1 действуют как ограничения">🤖 Автосборка</button>
         <button id="pf-clear" title="Очистить портфель">✕ Очистить</button>
       </div>
+      <!-- фильтры кандидатов автосборки: работают как ограничения при подборе -->
+      <div class="pf-filters" id="pf-filters">
+        <span class="fb-lab" style="min-width:auto;margin:0" title="Дополнительные ограничения на бумаги, из которых автосборка строит портфель. Работают вместе с целью и порогом рейтинга">Ограничения подбора</span>
+        <label class="ck" title="Покупка ниже номинала: к погашению вернётся номинал, часть дохода — прирост цены (капитальный гейн), а не только купоны">
+          <input type="checkbox" id="pf-belowpar"> Ниже номинала</label>
+        <label class="ck" title="Убрать флоатеров: их купон меняется вслед за ключевой ставкой, календарь выплат и доходность ориентировочные">
+          <input type="checkbox" id="pf-nofloat"> Только фикс. купон</label>
+        <label class="ck" title="Убрать бумаги с офертой: реальный срок владения может закончиться раньше погашения, календарь «разорвётся»">
+          <input type="checkbox" id="pf-nooffer"> Без оферты</label>
+        <label class="ck" title="Оборот за день ≥ 1 млн ₽: бумагу реально купить объёмом без большого спреда">
+          <input type="checkbox" id="pf-liq1m"> Оборот ≥ 1 млн ₽</label>
+      </div>
       <div id="pf-auto-report"></div>
       <div class="months" id="pf-months"></div>
       <div id="pf-change"></div>
@@ -813,6 +830,9 @@ const state = {
   pf: [],     // Блок 3: портфель — массив secid (хранится в localStorage)
   pfDay: null,// целевое число выплаты (1..31) или null
   pfBudget: null, // бюджет на покупку выбранных бумаг, ₽ (для расчёта сдачи)
+  pfAuto: false,  // портфель собран автосборкой (чтобы пересобирать при смене фильтров)
+  // ограничения на кандидатов автосборки (чекбоксы в панели портфеля)
+  pfF: { belowpar: false, nofloat: false, nooffer: false, liq1m: false },
   pfLots: {},     // сколько лотов каждой бумаги куплено (автасборка нормирует)
   view: "table",  // открытый экран: "table" | "cal" | "pf" (вкладки в шапке)
   // Календарь купонов: какой месяц показан и выбран ли день
@@ -1179,7 +1199,7 @@ function bindAll() {
     if (btn) togglePf(btn.dataset.s);
   });
   $("pf-clear").addEventListener("click", () => {
-    state.pf = []; state.pfLots = {};
+    state.pf = []; state.pfLots = {}; state.pfAuto = false;
     savePf(); savePfLots(); renderPfUi(); renderTable();
   });
   // автосборка: подбор 3–6 бумаг и лотов под бюджет и цель
@@ -1195,6 +1215,17 @@ function bindAll() {
     state.pfBudget = isFinite(v) && v > 0 ? v : null;
     savePfBudget(); renderPf();
   });
+  // ограничения кандидатов автосборки: сохраняем и пересобираем, если портфель
+  // уже собран автоматически (иначе чекбокс выглядит «не wirkавшим»)
+  for (const k in state.pfF) {
+    const el = $("pf-" + k);
+    if (!el) continue;
+    el.addEventListener("change", (e) => {
+      state.pfF[k] = e.target.checked;
+      savePfF();
+      if (state.pfAuto) autoAssemble();   // пересборка только если был автоподбор
+    });
+  }
   // клики по кнопкам «+» в строках таблицы (capture, чтобы не открывалась карточка)
   $("tbody").addEventListener("click", (e) => {
     const add = e.target.closest(".pf-add");
@@ -2217,6 +2248,7 @@ function exportCsv() {
 const PF_KEY = "bondScreener.pf";
 const PFDAY_KEY = "bondScreener.pfDay";
 const PFBUDGET_KEY = "bondScreener.pfBudget";
+const PFF_KEY = "bondScreener.pfFilters";   // ограничения кандидатов автосборки
 const PFLOTS_KEY = "bondScreener.pfLots";
 const MONTHS = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"];
 const MONTHS_GEN = ["январе", "феврале", "марте", "апреле", "мае", "июне",
@@ -2244,10 +2276,21 @@ function loadPf() {
       for (const k in o) if (o[k] > 0) state.pfLots[k] = Math.min(999, Math.round(o[k]));
     }
   } catch (e) { /* ignore */ }
+  // ограничения кандидатов автосборки
+  try {
+    const o = JSON.parse(localStorage.getItem(PFF_KEY));
+    if (o && typeof o === "object") {
+      for (const k in state.pfF) if (k in o) state.pfF[k] = !!o[k];
+    }
+  } catch (e) { /* ignore */ }
   const dayEl = $("pf-day");
   if (dayEl && state.pfDay) dayEl.value = state.pfDay;
   const budEl = $("pf-budget");
   if (budEl && state.pfBudget) budEl.value = state.pfBudget;
+  for (const k in state.pfF) {
+    const el = $("pf-" + k);
+    if (el) el.checked = state.pfF[k];
+  }
 }
 function savePf()    { try { localStorage.setItem(PF_KEY, JSON.stringify(state.pf)); } catch (e) {} }
 function savePfDay() { try {
@@ -2259,6 +2302,7 @@ function savePfBudget() { try {
   else localStorage.removeItem(PFBUDGET_KEY);
 } catch (e) {} }
 function savePfLots() { try { localStorage.setItem(PFLOTS_KEY, JSON.stringify(state.pfLots)); } catch (e) {} }
+function savePfF()   { try { localStorage.setItem(PFF_KEY, JSON.stringify(state.pfF)); } catch (e) {} }
 
 /* Сколько лотов бумаги куплено в портфеле: автосборка нормирует лоты,
    ручное добавление через «+» — всегда один лот */
@@ -2270,6 +2314,7 @@ function lotsOf(secid) {
 function togglePf(secid) {
   const i = state.pf.indexOf(secid);
   if (i >= 0) state.pf.splice(i, 1); else state.pf.push(secid);
+  state.pfAuto = false;   // ручная правка — пересборка по чекбоксам не нужна
   savePf();
   renderPfUi();
   renderTable(); // перерисовать «+»/«✓» в строках
@@ -2619,6 +2664,7 @@ function autoAssemble() {
   const ratingSel = $("pf-rating").value;
   const minRank = ratingSel === "bbb" ? 11 : ratingSel === "a" ? 14 : null;
   const govThresh = ratingSel === "gov";
+  const pfF = state.pfF || {};   // ограничения из чекбоксов панели портфеля
   const cands = [];
   let skipRating = 0, skipFloat = 0;   // отсев по кредитному риску — покажем в отчёте
   for (const b of state.filtered) {
@@ -2651,7 +2697,12 @@ function autoAssemble() {
       // флоатеры с фиктивной доходностью после роста ставки
       if (b.coupon_kind === "плав") { skipFloat++; continue; }
     }
+    // ограничения из чекбоксов панели портфеля (state.pfF)
+    if (pfF.nofloat && b.coupon_kind === "плав") { skipFloat++; continue; }
+    if (pfF.nooffer && b.offer && b.offer.nearest) continue;
+    if (pfF.liq1m && !((b.turnover || 0) >= 1e6)) continue;
     if (!b.price || b.price <= 0) continue;
+    if (pfF.belowpar && !(b.price < 100)) continue;   // только дисконт к номиналу
     if (!b.traded_today && !(b.liq > 0)) continue;    // нулевая ликвидность
     const cost = pfLotCost(b);
     if (!cost || cost > budget) continue;             // хотя бы один лот не влезает
@@ -2800,6 +2851,7 @@ function autoAssemble() {
   state.pf = picked.map((c) => c.b.secid);
   state.pfLots = {};
   for (const c of picked) state.pfLots[c.b.secid] = c.n;
+  state.pfAuto = true;               // собрано роботом — чекбоксы пересоберут
   savePf(); savePfLots();
   renderPf();
 
@@ -2834,9 +2886,17 @@ function autoAssemble() {
       (skipFloat ? (skipRating ? "· " : "") + "<b>" + skipFloat + "</b> флоатеров (их доходность несравнима с фиксом) " : "") +
       "— не берём";
   }
+  // активные ограничения подбора из чекбоксов — пишем, чтобы не забыть
+  const onF = [];
+  if (pfF.belowpar) onF.push("ниже номинала");
+  if (pfF.nofloat) onF.push("только фикс. купон");
+  if (pfF.nooffer) onF.push("без оферты");
+  if (pfF.liq1m) onF.push("оборот ≥ 1 млн ₽");
+  const onFNote = onF.length
+    ? " · ограничения: <b>" + onF.map(esc).join(", ") + "</b>" : "";
   report.innerHTML = '<div class="pf-advice" style="background:rgba(38,166,154,.1);border-color:rgba(38,166,154,.45);color:#8fd8d0">' +
     "🤖 <b>Автосборка</b> · цель: " + goalLabel +
-      (rtLabel ? " · рейтинг <b>" + rtLabel + "</b>" : "") +
+      (rtLabel ? " · рейтинг <b>" + rtLabel + "</b>" : "") + onFNote +
       " — " + picked.length + " " +
       ["бумага", "бумаги", "бумаг"][picked.length === 1 ? 0 : picked.length <= 4 ? 1 : 2] +
     " · вложено <b>" + fmtInt(best.invested) + " ₽</b> · сдача <b>" + fmtInt(change) + " ₽</b>" + avgNote + "<br>" +
